@@ -35,6 +35,7 @@ export function usePiperPlayback({ document, settings, onProgress }: UsePiperPla
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const runTokenRef = useRef(0);
   const activeSegmentIdRef = useRef<string | null>(document?.cursorSegmentId ?? null);
+  const requestedWarmVoicesRef = useRef(new Set<string>());
 
   const [status, setStatus] = useState<PlaybackStatus>("idle");
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(document?.cursorSegmentId ?? null);
@@ -47,6 +48,14 @@ export function usePiperPlayback({ document, settings, onProgress }: UsePiperPla
 
     worker.onmessage = (event: MessageEvent<PiperWorkerResponse>) => {
       const message = event.data;
+      if (message.type === "status") {
+        setDownload({
+          progress: Math.max(0, Math.min(1, message.progress ?? 0)),
+          label: message.label
+        });
+        return;
+      }
+
       if (message.type === "downloadProgress") {
         setDownload({
           progress: Math.max(0, Math.min(1, message.progress)),
@@ -64,16 +73,35 @@ export function usePiperPlayback({ document, settings, onProgress }: UsePiperPla
         return;
       }
 
+      if (message.type === "ready") {
+        requestedWarmVoicesRef.current.add(message.voiceId);
+        setDownload({
+          progress: 1,
+          label: "Voice ready"
+        });
+        return;
+      }
+
       if (message.type === "error") {
         const pending = pendingRef.current.get(message.id);
         if (pending) {
           pendingRef.current.delete(message.id);
           pending.reject(new Error(message.message));
         } else {
+          if (message.id.startsWith("warm-")) {
+            requestedWarmVoicesRef.current.delete(message.id.slice("warm-".length));
+          }
           setError(message.message);
           setStatus("error");
         }
       }
+    };
+    worker.onerror = (event) => {
+      event.preventDefault();
+      failPending(`Speech worker failed: ${event.message || "unknown worker error"}`);
+    };
+    worker.onmessageerror = () => {
+      failPending("Speech worker sent an unreadable message.");
     };
 
     return () => {
@@ -82,6 +110,13 @@ export function usePiperPlayback({ document, settings, onProgress }: UsePiperPla
       pendingRef.current.forEach((pending) => pending.reject(new Error("Playback worker stopped.")));
       pendingRef.current.clear();
     };
+    function failPending(message: string): void {
+      const error = new Error(message);
+      pendingRef.current.forEach((pending) => pending.reject(error));
+      pendingRef.current.clear();
+      setError(message);
+      setStatus("error");
+    }
   }, []);
 
   useEffect(() => {
@@ -90,6 +125,25 @@ export function usePiperPlayback({ document, settings, onProgress }: UsePiperPla
     }
     gainRef.current.gain.value = settings.volume;
   }, [settings.volume]);
+
+  useEffect(() => {
+    const worker = workerRef.current;
+    if (!document || !worker) {
+      return;
+    }
+
+    const voice = voiceForQuality(settings.quality);
+    if (requestedWarmVoicesRef.current.has(voice.id)) {
+      return;
+    }
+
+    requestedWarmVoicesRef.current.add(voice.id);
+    worker.postMessage({
+      type: "warmVoice",
+      id: `warm-${voice.id}`,
+      voice
+    } satisfies PiperWorkerRequest);
+  }, [document?.id, settings.quality]);
 
   useEffect(() => {
     activeSegmentIdRef.current = document?.cursorSegmentId ?? null;
@@ -215,12 +269,12 @@ export function usePiperPlayback({ document, settings, onProgress }: UsePiperPla
     [document, onProgress, settings.volume, synthesize]
   );
 
-  const toggle = useCallback(async () => {
+  const toggle = useCallback(async (segmentId?: string | null) => {
     if (status === "playing" || status === "loading") {
       await pause();
       return;
     }
-    await playFrom(activeSegmentIdRef.current);
+    await playFrom(segmentId ?? activeSegmentIdRef.current);
   }, [pause, playFrom, status]);
 
   return {

@@ -32,6 +32,12 @@ export function getDb(): Promise<IDBPDatabase<WhispbookDB>> {
       if (!db.objectStoreNames.contains("settings")) {
         db.createObjectStore("settings");
       }
+    },
+    blocking() {
+      void closeCachedDb();
+    },
+    terminated() {
+      dbPromise = null;
     }
   });
   return dbPromise;
@@ -42,54 +48,114 @@ export function resetDbConnectionForTests(): void {
 }
 
 export async function closeDbForTests(): Promise<void> {
+  await closeCachedDb();
+}
+
+async function closeCachedDb(): Promise<void> {
   if (!dbPromise) {
     return;
   }
-  const db = await dbPromise;
-  db.close();
-  dbPromise = null;
+
+  try {
+    const db = await dbPromise;
+    db.close();
+  } finally {
+    dbPromise = null;
+  }
+}
+
+async function withDb<T>(operation: (db: IDBPDatabase<WhispbookDB>) => Promise<T>): Promise<T> {
+  try {
+    return await operation(await getDb());
+  } catch (error) {
+    if (!isRecoverableDbConnectionError(error)) {
+      throw error;
+    }
+
+    await closeCachedDb();
+    return operation(await getDb());
+  }
+}
+
+function isRecoverableDbConnectionError(error: unknown): boolean {
+  if (!(error instanceof DOMException || error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    error.name === "InvalidStateError" ||
+    error.name === "TransactionInactiveError" ||
+    message.includes("connection is closing") ||
+    message.includes("database connection is closing") ||
+    message.includes("connection is closed")
+  );
 }
 
 export async function getAllDocuments(): Promise<StoredDocument[]> {
-  const db = await getDb();
-  const documents = await db.getAllFromIndex("documents", "by-updated");
+  const documents = await withDb((db) => db.getAllFromIndex("documents", "by-updated"));
   return documents.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function getDocument(id: string): Promise<StoredDocument | undefined> {
-  return (await getDb()).get("documents", id);
+  return withDb((db) => db.get("documents", id));
 }
 
 export async function saveDocument(document: StoredDocument): Promise<void> {
-  await (await getDb()).put("documents", {
-    ...document,
-    updatedAt: Date.now()
-  });
+  await withDb((db) =>
+    db.put("documents", {
+      ...document,
+      updatedAt: Date.now()
+    })
+  );
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  await (await getDb()).delete("documents", id);
+  await withDb((db) => db.delete("documents", id));
 }
 
 export async function updateDocumentProgress(id: string, cursorSegmentId: string | null): Promise<void> {
-  const db = await getDb();
-  const document = await db.get("documents", id);
-  if (!document) {
-    return;
-  }
+  await withDb(async (db) => {
+    const document = await db.get("documents", id);
+    if (!document) {
+      return;
+    }
 
-  await db.put("documents", {
-    ...document,
-    cursorSegmentId,
-    updatedAt: Date.now()
+    await db.put("documents", {
+      ...document,
+      cursorSegmentId,
+      updatedAt: Date.now()
+    });
+  });
+}
+
+export async function updateDocumentContent(document: StoredDocument): Promise<StoredDocument | undefined> {
+  return withDb(async (db) => {
+    const current = await db.get("documents", document.id);
+    if (!current) {
+      return undefined;
+    }
+
+    const cursorSegmentId =
+      current.cursorSegmentId && document.segments.some((segment) => segment.id === current.cursorSegmentId)
+        ? current.cursorSegmentId
+        : document.cursorSegmentId;
+    const updated = {
+      ...document,
+      cursorSegmentId,
+      updatedAt: Date.now()
+    };
+
+    await db.put("documents", updated);
+    return updated;
   });
 }
 
 export async function getSettings(): Promise<ReaderSettings> {
-  const stored = await (await getDb()).get("settings", settingsKey);
+  const stored = await withDb((db) => db.get("settings", settingsKey));
   return normalizeSettings(stored ?? DEFAULT_SETTINGS);
 }
 
 export async function saveSettings(settings: ReaderSettings): Promise<void> {
-  await (await getDb()).put("settings", normalizeSettings(settings), settingsKey);
+  await withDb((db) => db.put("settings", normalizeSettings(settings), settingsKey));
 }

@@ -6,6 +6,7 @@ import {
   getSettings,
   saveDocument,
   saveSettings,
+  updateDocumentContent,
   updateDocumentProgress
 } from "./db";
 
@@ -18,6 +19,7 @@ interface LibraryState {
   importDocument: (document: StoredDocument) => Promise<void>;
   removeDocument: (id: string) => Promise<void>;
   setActiveDocument: (document: StoredDocument | null) => void;
+  updateDocument: (document: StoredDocument) => Promise<StoredDocument | undefined>;
   persistProgress: (documentId: string, cursorSegmentId: string | null) => Promise<void>;
   persistSettings: (settings: ReaderSettings) => Promise<void>;
 }
@@ -62,6 +64,19 @@ export function useLibrary(): LibraryState {
     [refresh]
   );
 
+  const updateDocument = useCallback(async (document: StoredDocument) => {
+    const updated = await updateDocumentContent(document);
+    if (!updated) {
+      return undefined;
+    }
+
+    setDocuments((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item)).sort((a, b) => b.updatedAt - a.updatedAt)
+    );
+    setActiveDocument((current) => (current?.id === updated.id ? updated : current));
+    return updated;
+  }, []);
+
   const persistProgress = useCallback(
     async (documentId: string, cursorSegmentId: string | null) => {
       await updateDocumentProgress(documentId, cursorSegmentId);
@@ -91,6 +106,7 @@ export function useLibrary(): LibraryState {
     importDocument,
     removeDocument,
     setActiveDocument,
+    updateDocument,
     persistProgress,
     persistSettings
   };

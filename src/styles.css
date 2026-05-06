@@ -176,6 +176,63 @@ button {
   background: #ffe8e5;
 }
 
+.background-import {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 12px;
+  align-items: center;
+  margin: 0 0 12px;
+  border: 1px solid #cddbd7;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #eef8f5;
+}
+
+.background-import div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.background-import strong,
+.background-import span,
+.background-import em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-import strong {
+  font-size: 0.9rem;
+}
+
+.background-import span,
+.background-import em {
+  color: #5b6563;
+  font-size: 0.78rem;
+}
+
+.background-import em {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.background-import-progress {
+  grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #d5e6e1;
+}
+
+.background-import-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2f8f83;
+  transition: width 180ms ease;
+}
+
 .document-strip {
   display: flex;
   gap: 9px;
@@ -230,12 +287,27 @@ button {
   line-height: 1.58;
   text-align: left;
   background: transparent;
+  touch-action: manipulation;
 }
 
 .text-segment:active,
-.text-segment.is-active {
+.text-segment.is-selected {
   background: #dff1ed;
   box-shadow: inset 4px 0 0 #2f8f83;
+}
+
+.text-segment.is-reading {
+  background: #fff2df;
+  box-shadow: inset 4px 0 0 #d97706;
+}
+
+.text-segment.is-reading.is-selected {
+  background:
+    linear-gradient(90deg, rgba(47, 143, 131, 0.15), transparent 26%),
+    #fff2df;
+  box-shadow:
+    inset 4px 0 0 #d97706,
+    inset 10px 0 0 rgba(47, 143, 131, 0.42);
 }
 
 .empty-state {
@@ -283,6 +355,16 @@ button {
   height: 100%;
   background: #2f8f83;
   transition: width 180ms ease;
+}
+
+.playback-progress.is-indeterminate {
+  overflow: hidden;
+}
+
+.playback-progress.is-indeterminate span {
+  width: 42% !important;
+  background: linear-gradient(90deg, transparent, #2f8f83, transparent);
+  animation: playback-loading 1.35s ease-in-out infinite;
 }
 
 .round-control {
@@ -523,13 +605,30 @@ button {
   }
 }
 
+@keyframes playback-loading {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(250%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .turning-page {
     animation: none;
   }
 
+  .playback-progress.is-indeterminate span {
+    animation: none;
+    transform: none;
+    background: #2f8f83;
+  }
+
   .loader-progress span,
-  .playback-progress span {
+  .playback-progress span,
+  .background-import-progress span {
     transition: none;
   }
 }

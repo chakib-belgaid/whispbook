@@ -11,9 +11,9 @@ import {
   Volume2,
   X
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePiperPlayback } from "./hooks/usePiperPlayback";
-import { documentFromFile, documentFromText, type ImportProgress } from "./lib/files";
+import { createStreamingPdfImport, documentFromFile, documentFromText, type ImportProgress } from "./lib/files";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { useLibrary } from "./state/useLibrary";
 import type { ReaderSettings, StoredDocument, TextSegment, VoiceQuality } from "./types";
@@ -28,6 +28,7 @@ function App() {
     importDocument,
     removeDocument,
     setActiveDocument,
+    updateDocument,
     persistProgress,
     persistSettings
   } = useLibrary();
@@ -36,10 +37,14 @@ function App() {
   const [pasteText, setPasteText] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [backgroundProgress, setBackgroundProgress] = useState<ImportProgress | null>(null);
+  const [backgroundTitle, setBackgroundTitle] = useState<string | null>(null);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pasteTextRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastSegmentTapRef = useRef<{ segmentId: string; time: number } | null>(null);
 
   const playback = usePiperPlayback({
     document: activeDocument,
@@ -47,15 +52,23 @@ function App() {
     onProgress: persistProgress
   });
 
+  const displayedSegmentId =
+    playback.status === "playing" || playback.status === "loading"
+      ? playback.activeSegmentId ?? selectedSegmentId
+      : selectedSegmentId ?? playback.activeSegmentId;
   const activeIndex = useMemo(() => {
-    if (!activeDocument || !playback.activeSegmentId) {
+    if (!activeDocument || !displayedSegmentId) {
       return 0;
     }
     return Math.max(
       0,
-      activeDocument.segments.findIndex((segment) => segment.id === playback.activeSegmentId)
+      activeDocument.segments.findIndex((segment) => segment.id === displayedSegmentId)
     );
-  }, [activeDocument, playback.activeSegmentId]);
+  }, [activeDocument, displayedSegmentId]);
+
+  useEffect(() => {
+    setSelectedSegmentId(activeDocument?.cursorSegmentId ?? activeDocument?.segments[0]?.id ?? null);
+  }, [activeDocument?.id]);
 
   async function handleFiles(files: FileList | null): Promise<void> {
     const file = files?.[0];
@@ -65,11 +78,21 @@ function App() {
 
     setImporting(true);
     setImportError(null);
+    setBackgroundProgress(null);
+    setBackgroundTitle(null);
     setImportProgress({ phase: "reading", percent: 1, message: "Opening book" });
     try {
-      const document = await documentFromFile(file, (progress) => {
-        setImportProgress((current) => mergeImportProgress(current, progress));
-      });
+      const isPdf = file.name.toLowerCase().endsWith(".pdf");
+      const streamingImport = isPdf
+        ? await createStreamingPdfImport(file, (progress) => {
+            setImportProgress((current) => mergeImportProgress(current, progress));
+          })
+        : null;
+      const document =
+        streamingImport?.document ??
+        (await documentFromFile(file, (progress) => {
+          setImportProgress((current) => mergeImportProgress(current, progress));
+        }));
       if (document.segments.length === 0) {
         throw new Error("No readable text found.");
       }
@@ -81,6 +104,42 @@ function App() {
         mergeImportProgress(current, { phase: "done", percent: 100, message: "Book ready" })
       );
       await delay(260);
+
+      if (streamingImport && !streamingImport.isComplete) {
+        setBackgroundTitle(document.title);
+        setBackgroundProgress({
+          phase: "extracting",
+          percent: document.extraction?.percent ?? 0,
+          message: document.extraction?.message ?? "Loading remaining pages",
+          pageNumber: document.extraction?.pagesLoaded,
+          pageCount: document.extraction?.pageCount
+        });
+        void streamingImport
+          .continueExtraction(async (updatedDocument, progress) => {
+            const saved = await updateDocument(updatedDocument);
+            if (!saved) {
+              setBackgroundProgress(null);
+              setBackgroundTitle(null);
+              return false;
+            }
+            setBackgroundProgress(progress);
+            if (progress.phase === "done") {
+              await delay(700);
+              setBackgroundProgress(null);
+              setBackgroundTitle(null);
+            }
+            return true;
+          }, (progress) => setBackgroundProgress(progress))
+          .catch((error: unknown) => {
+            setBackgroundProgress({
+              phase: "extracting",
+              percent: document.extraction?.percent ?? 0,
+              message: error instanceof Error ? error.message : String(error),
+              pageNumber: document.extraction?.pagesLoaded,
+              pageCount: document.extraction?.pageCount
+            });
+          });
+      }
     } catch (error) {
       setImportError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -183,6 +242,10 @@ function App() {
 
       {importError && <p className="error-banner">{importError}</p>}
 
+      {backgroundProgress && (
+        <BackgroundImportBanner title={backgroundTitle ?? "PDF"} progress={backgroundProgress} />
+      )}
+
       {documents.length > 0 && (
         <nav className="document-strip" aria-label="Library">
           {documents.map((document) => (
@@ -193,7 +256,7 @@ function App() {
               onClick={() => setActiveDocument(document)}
             >
               <span>{document.title}</span>
-              <small>{document.segments.length} parts</small>
+              <small>{documentSubtitle(document)}</small>
             </button>
           ))}
         </nav>
@@ -202,8 +265,24 @@ function App() {
       <ReaderView
         loading={loading}
         document={activeDocument}
-        activeSegmentId={playback.activeSegmentId}
-        onSegmentTap={(segment) => void playback.playFrom(segment.id)}
+        readingSegmentId={playback.status === "playing" ? playback.activeSegmentId : null}
+        selectedSegmentId={selectedSegmentId}
+        onSegmentTap={(segment) => {
+          const now = Date.now();
+          const isDoubleTap =
+            lastSegmentTapRef.current?.segmentId === segment.id && now - lastSegmentTapRef.current.time < 330;
+          lastSegmentTapRef.current = { segmentId: segment.id, time: now };
+          setSelectedSegmentId(segment.id);
+
+          if (isDoubleTap) {
+            void playback.playFrom(segment.id);
+            return;
+          }
+
+          if (playback.status === "playing" || playback.status === "loading") {
+            void playback.pause();
+          }
+        }}
       />
 
       <PlaybackBar
@@ -212,7 +291,7 @@ function App() {
         activeIndex={activeIndex}
         error={playback.error}
         download={playback.download}
-        onToggle={() => void playback.toggle()}
+        onToggle={() => void playback.toggle(selectedSegmentId)}
         onSettings={() => setSettingsOpen(true)}
         onDelete={async () => {
           if (!activeDocument) {
@@ -239,11 +318,12 @@ function App() {
 interface ReaderViewProps {
   loading: boolean;
   document: StoredDocument | null;
-  activeSegmentId: string | null;
+  readingSegmentId: string | null;
+  selectedSegmentId: string | null;
   onSegmentTap: (segment: TextSegment) => void;
 }
 
-function ReaderView({ loading, document, activeSegmentId, onSegmentTap }: ReaderViewProps) {
+function ReaderView({ loading, document, readingSegmentId, selectedSegmentId, onSegmentTap }: ReaderViewProps) {
   if (loading) {
     return <section className="empty-state">Loading</section>;
   }
@@ -264,7 +344,7 @@ function ReaderView({ loading, document, activeSegmentId, onSegmentTap }: Reader
         <button
           key={segment.id}
           type="button"
-          className={segment.id === activeSegmentId ? "text-segment is-active" : "text-segment"}
+          className={segmentClassName(segment.id, readingSegmentId, selectedSegmentId)}
           onClick={() => onSegmentTap(segment)}
         >
           {segment.text}
@@ -272,6 +352,17 @@ function ReaderView({ loading, document, activeSegmentId, onSegmentTap }: Reader
       ))}
     </article>
   );
+}
+
+function segmentClassName(segmentId: string, readingSegmentId: string | null, selectedSegmentId: string | null): string {
+  const classes = ["text-segment"];
+  if (segmentId === selectedSegmentId) {
+    classes.push("is-selected");
+  }
+  if (segmentId === readingSegmentId) {
+    classes.push("is-reading");
+  }
+  return classes.join(" ");
 }
 
 interface PlaybackBarProps {
@@ -298,13 +389,14 @@ function PlaybackBar({
   const disabled = !document || document.segments.length === 0;
   const isBusy = status === "loading";
   const isPlaying = status === "playing";
+  const isDocumentExtracting = Boolean(document && isExtractingPdf(document));
 
   return (
     <footer className="playback-bar">
-      <div className="playback-progress" aria-hidden="true">
+      <div className={isDocumentExtracting ? "playback-progress is-indeterminate" : "playback-progress"} aria-hidden="true">
         <span
           style={{
-            width: document ? `${Math.max(1, ((activeIndex + 1) / document.segments.length) * 100)}%` : "0%"
+            width: document && !isDocumentExtracting ? `${Math.max(1, ((activeIndex + 1) / document.segments.length) * 100)}%` : "0%"
           }}
         />
       </div>
@@ -312,8 +404,8 @@ function PlaybackBar({
         {isPlaying ? <Pause size={25} /> : <Play size={25} />}
       </button>
       <div className="playback-meta">
-        <strong>{document ? `${activeIndex + 1} / ${document.segments.length}` : "Ready"}</strong>
-        <span>{error ?? downloadLabel(download, status)}</span>
+        <strong>{document ? playbackPrimaryLabel(document, activeIndex) : "Ready"}</strong>
+        <span>{error ?? downloadLabel(download, status, document)}</span>
       </div>
       <button className="icon-button" type="button" onClick={onSettings} aria-label="Playback settings">
         <SlidersHorizontal size={21} />
@@ -417,7 +509,15 @@ function SettingsSheet({
   );
 }
 
-function downloadLabel(download: { progress: number; label: string } | null, status: string): string {
+function playbackPrimaryLabel(document: StoredDocument, activeIndex: number): string {
+  if (isExtractingPdf(document)) {
+    return `Paragraph ${activeIndex + 1}`;
+  }
+
+  return `${activeIndex + 1} / ${document.segments.length}`;
+}
+
+function downloadLabel(download: { progress: number; label: string } | null, status: string, document: StoredDocument | null): string {
   if (download) {
     const percent = download.progress > 0 ? ` ${Math.round(download.progress * 100)}%` : "";
     return `${download.label}${percent}`;
@@ -430,6 +530,9 @@ function downloadLabel(download: { progress: number; label: string } | null, sta
   }
   if (status === "playing") {
     return "Playing";
+  }
+  if (document && isExtractingPdf(document)) {
+    return documentSubtitle(document);
   }
   return "Tap a paragraph";
 }
@@ -470,6 +573,27 @@ function BookImportOverlay({ progress }: { progress: ImportProgress }) {
   );
 }
 
+function BackgroundImportBanner({ title, progress }: { title: string; progress: ImportProgress }) {
+  const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+  const pageLabel =
+    progress.pageCount && progress.pageNumber
+      ? `${progress.pageNumber} / ${progress.pageCount} pages`
+      : "Loading pages";
+
+  return (
+    <section className="background-import" aria-live="polite">
+      <div>
+        <strong>{title}</strong>
+        <span>{progress.message}</span>
+      </div>
+      <em>{pageLabel}</em>
+      <div className="background-import-progress" aria-hidden="true">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+    </section>
+  );
+}
+
 function mergeImportProgress(current: ImportProgress | null, next: ImportProgress): ImportProgress {
   return {
     ...next,
@@ -480,6 +604,24 @@ function mergeImportProgress(current: ImportProgress | null, next: ImportProgres
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function documentSubtitle(document: StoredDocument): string {
+  if (isExtractingPdf(document)) {
+    const pagesLoaded = document.extraction?.pagesLoaded ?? 0;
+    const pageCount = document.extraction?.pageCount ?? 0;
+    return pageCount > 0 ? `${pagesLoaded} / ${pageCount} pages loaded` : "Loading pages";
+  }
+
+  if (document.kind === "pdf" && document.extraction?.pageCount) {
+    return `${document.extraction.pageCount} pages`;
+  }
+
+  return `${document.segments.length} paragraphs`;
+}
+
+function isExtractingPdf(document: StoredDocument): boolean {
+  return document.kind === "pdf" && document.extraction?.status === "extracting";
 }
 
 export default App;

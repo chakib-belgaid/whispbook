@@ -4,6 +4,8 @@ export type VoiceQuality = "low" | "medium" | "high";
 
 export type PlaybackStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
+export type DocumentExtractionStatus = "extracting" | "complete" | "error";
+
 export interface TextSegment {
   id: string;
   index: number;
@@ -21,6 +23,13 @@ export interface StoredDocument {
   text: string;
   segments: TextSegment[];
   cursorSegmentId: string | null;
+  extraction?: {
+    status: DocumentExtractionStatus;
+    pagesLoaded?: number;
+    pageCount?: number;
+    percent: number;
+    message?: string;
+  };
 }
 
 export interface ReaderSettings {
@@ -80,6 +89,7 @@ export type PiperWorkerRequest =
 
 export type PiperWorkerResponse =
   | { type: "ready"; id: string; voiceId: string }
+  | { type: "status"; id?: string; label: string; progress?: number }
   | { type: "downloadProgress"; id: string; voiceId: string; progress: number; label: string }
   | { type: "synthesized"; payload: SynthesisResult }
   | { type: "error"; id: string; message: string };

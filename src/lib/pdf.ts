@@ -12,28 +12,8 @@ export interface PdfProgress {
 export type PdfProgressCallback = (progress: PdfProgress) => void;
 
 export async function extractPdfText(file: File, onProgress?: PdfProgressCallback): Promise<string> {
-  const data = await file.arrayBuffer();
-  const document = await pdfjsLib.getDocument({ data }).promise;
-  const pages: string[] = [];
-  onProgress?.({ pageNumber: 0, pageCount: document.numPages, percent: 0 });
-
-  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-    const page = await document.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const text = content.items
-      .map((item) => ("str" in item ? item.str : ""))
-      .join(" ")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-    if (text) {
-      pages.push(text);
-    }
-    onProgress?.({
-      pageNumber,
-      pageCount: document.numPages,
-      percent: Math.round((pageNumber / document.numPages) * 100)
-    });
-  }
+  const session = await openPdfExtraction(file);
+  const pages = await session.extractPages(1, session.pageCount, onProgress);
 
   const extracted = pages.join("\n\n").trim();
   if (!extracted) {
@@ -41,4 +21,47 @@ export async function extractPdfText(file: File, onProgress?: PdfProgressCallbac
   }
 
   return extracted;
+}
+
+export interface PdfExtractionSession {
+  pageCount: number;
+  extractPages: (startPage: number, endPage: number, onProgress?: PdfProgressCallback) => Promise<string[]>;
+}
+
+export async function openPdfExtraction(file: File): Promise<PdfExtractionSession> {
+  const data = await file.arrayBuffer();
+  const document = await pdfjsLib.getDocument({ data }).promise;
+
+  return {
+    pageCount: document.numPages,
+    async extractPages(startPage, endPage, onProgress) {
+      const pages: string[] = [];
+      const safeStart = Math.max(1, startPage);
+      const safeEnd = Math.min(document.numPages, endPage);
+
+      if (safeStart === 1) {
+        onProgress?.({ pageNumber: 0, pageCount: document.numPages, percent: 0 });
+      }
+
+      for (let pageNumber = safeStart; pageNumber <= safeEnd; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const text = content.items
+          .map((item) => ("str" in item ? item.str : ""))
+          .join(" ")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+        if (text) {
+          pages.push(text);
+        }
+        onProgress?.({
+          pageNumber,
+          pageCount: document.numPages,
+          percent: Math.round((pageNumber / document.numPages) * 100)
+        });
+      }
+
+      return pages;
+    }
+  };
 }
