@@ -21,5 +21,5 @@ export const voiceCatalog: VoiceDefinition[] = (["low", "medium", "high"] as Voi
 }));
 
 export function voiceForQuality(quality: VoiceQuality): VoiceDefinition {
-  return voiceCatalog.find((voice) => voice.quality === quality) ?? voiceCatalog[1];
+  return voiceCatalog.find((voice) => voice.quality === quality) ?? voiceCatalog[0];
 }

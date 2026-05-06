@@ -8,24 +8,45 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope;
 const voiceCacheName = "whispbook-voices-v1";
 const sessionCreateTimeoutMs = 90000;
 const phonemizeTimeoutMs = 30000;
+const inferenceTimeoutMs = 45000;
 
 ort.env.wasm.numThreads = 1;
 ort.env.wasm.proxy = false;
+ort.env.logLevel = "warning";
 
 const engine = new PiperEngine({
   fetchAsset,
   createSession: async (model) => {
     postStatus("Loading voice model on device", 1);
-    return (await withTimeout(
+    const session = (await withTimeout(
       ort.InferenceSession.create(model, {
         executionProviders: ["wasm"],
-        graphOptimizationLevel: "all"
+        executionMode: "sequential",
+        graphOptimizationLevel: "disabled",
+        enableCpuMemArena: false,
+        enableMemPattern: false,
+        extra: {
+          session: {
+            intra_op_num_threads: "1",
+            inter_op_num_threads: "1"
+          }
+        }
       }),
       sessionCreateTimeoutMs,
       "Voice model loaded, but ONNX setup is taking too long. Try low quality or reload the app."
     )) as unknown as PiperSession;
+    postStatus("Voice model ready", 1);
+    return {
+      run: (feeds) =>
+        withTimeout(
+          session.run(feeds),
+          inferenceTimeoutMs,
+          "Piper audio generation timed out on this device. Using Android speech may work better."
+        )
+    };
   },
   createTensor: (type, data, dims) => new ort.Tensor(type, data, dims),
+  reportStatus: postStatus,
   phonemize: async (text, espeakVoice) => {
     postStatus("Preparing pronunciation", 1);
     const result = await withTimeout(

@@ -2,7 +2,7 @@ import type { ReaderSettings, VoiceQuality } from "../types";
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
   voiceId: "en_US-lessac",
-  quality: "medium",
+  quality: "low",
   speed: 1,
   volume: 0.9
 };

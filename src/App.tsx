@@ -389,6 +389,7 @@ function PlaybackBar({
   const disabled = !document || document.segments.length === 0;
   const isBusy = status === "loading";
   const isPlaying = status === "playing";
+  const isActive = isPlaying || isBusy;
   const isDocumentExtracting = Boolean(document && isExtractingPdf(document));
 
   return (
@@ -400,8 +401,8 @@ function PlaybackBar({
           }}
         />
       </div>
-      <button className="round-control" type="button" disabled={disabled || isBusy} onClick={onToggle} aria-label={isPlaying ? "Pause" : "Play"}>
-        {isPlaying ? <Pause size={25} /> : <Play size={25} />}
+      <button className="round-control" type="button" disabled={disabled} onClick={onToggle} aria-label={isActive ? "Pause" : "Play"}>
+        {isActive ? <Pause size={25} /> : <Play size={25} />}
       </button>
       <div className="playback-meta">
         <strong>{document ? playbackPrimaryLabel(document, activeIndex) : "Ready"}</strong>
@@ -519,6 +520,9 @@ function playbackPrimaryLabel(document: StoredDocument, activeIndex: number): st
 
 function downloadLabel(download: { progress: number; label: string } | null, status: string, document: StoredDocument | null): string {
   if (download) {
+    if (status === "loading" && download.label === "Voice ready") {
+      return "Generating first audio";
+    }
     const percent = download.progress > 0 ? ` ${Math.round(download.progress * 100)}%` : "";
     return `${download.label}${percent}`;
   }

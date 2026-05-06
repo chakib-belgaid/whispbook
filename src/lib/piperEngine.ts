@@ -18,6 +18,7 @@ export interface PiperEngineDeps {
   createSession: (model: ArrayBuffer) => Promise<PiperSession>;
   createTensor: (type: TensorType, data: BigInt64Array | Float32Array, dims: number[]) => unknown;
   phonemize: (text: string, espeakVoice: string) => Promise<string | string[]>;
+  reportStatus?: (label: string, progress?: number) => void;
 }
 
 interface LoadedVoice {
@@ -43,7 +44,9 @@ export class PiperEngine {
     }
 
     const feeds = createFeeds(this.deps, phonemeIds, loaded.config, request.settings);
+    this.deps.reportStatus?.("Generating speech audio", 1);
     const outputs = await loaded.session.run(feeds);
+    this.deps.reportStatus?.("Speech audio ready", 1);
     const output = Object.values(outputs)[0];
     if (!output) {
       throw new Error("Piper returned no audio output.");

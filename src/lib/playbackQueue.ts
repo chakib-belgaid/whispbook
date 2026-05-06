@@ -1,13 +1,14 @@
 import type { SynthesisResult, TextSegment } from "../types";
 
 export type SegmentSynthesizer = (segment: TextSegment) => Promise<SynthesisResult>;
+export type ItemSynthesizer<TItem, TResult> = (item: TItem) => Promise<TResult>;
 
-export class PlaybackQueue {
-  private readonly inFlight = new Map<number, Promise<SynthesisResult>>();
+export class PlaybackQueue<TItem = TextSegment, TResult = SynthesisResult> {
+  private readonly inFlight = new Map<number, Promise<TResult>>();
 
   constructor(
-    private readonly segments: TextSegment[],
-    private readonly synthesize: SegmentSynthesizer,
+    private readonly segments: TItem[],
+    private readonly synthesize: ItemSynthesizer<TItem, TResult>,
     private readonly windowSize = 3
   ) {}
 
@@ -28,7 +29,7 @@ export class PlaybackQueue {
     }
   }
 
-  async take(index: number): Promise<SynthesisResult> {
+  async take(index: number): Promise<TResult> {
     this.preload(index);
     const result = await this.inFlight.get(index);
     if (!result) {
