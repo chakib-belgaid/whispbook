@@ -1,11 +1,43 @@
 import type { DocumentKind, StoredDocument } from "../types";
 import { segmentText } from "./segmentation";
 
-export async function documentFromFile(file: File): Promise<StoredDocument> {
+export type ImportPhase = "reading" | "extracting" | "segmenting" | "saving" | "done";
+
+export interface ImportProgress {
+  phase: ImportPhase;
+  percent: number;
+  message: string;
+  pageNumber?: number;
+  pageCount?: number;
+}
+
+export type ImportProgressCallback = (progress: ImportProgress) => void;
+
+export async function documentFromFile(file: File, onProgress?: ImportProgressCallback): Promise<StoredDocument> {
   const extension = file.name.toLowerCase().split(".").pop();
   const kind: DocumentKind = extension === "pdf" ? "pdf" : "text";
-  const text = kind === "pdf" ? await extractPdf(file) : await file.text();
-  return documentFromText(text, file.name, kind);
+  onProgress?.({ phase: "reading", percent: 4, message: "Opening book" });
+
+  const text =
+    kind === "pdf"
+      ? await extractPdf(file, (progress) =>
+          onProgress?.({
+            phase: "extracting",
+            percent: 10 + Math.round(progress.percent * 0.76),
+            message:
+              progress.pageNumber > 0
+                ? `Reading page ${progress.pageNumber} of ${progress.pageCount}`
+                : "Counting pages",
+            pageNumber: progress.pageNumber,
+            pageCount: progress.pageCount
+          })
+        )
+      : await readTextFile(file, onProgress);
+
+  onProgress?.({ phase: "segmenting", percent: 90, message: "Preparing pages" });
+  const document = documentFromText(text, file.name, kind);
+  onProgress?.({ phase: "done", percent: 96, message: "Book ready" });
+  return document;
 }
 
 export function documentFromText(text: string, title = "Pasted text", kind: DocumentKind = "paste"): StoredDocument {
@@ -34,7 +66,14 @@ export function createDocumentId(title: string, timestamp = Date.now()): string 
   return `${slug || "doc"}-${timestamp.toString(36)}-${random}`;
 }
 
-async function extractPdf(file: File): Promise<string> {
+async function extractPdf(file: File, onProgress?: (progress: { pageNumber: number; pageCount: number; percent: number }) => void): Promise<string> {
   const { extractPdfText } = await import("./pdf");
-  return extractPdfText(file);
+  return extractPdfText(file, onProgress);
+}
+
+async function readTextFile(file: File, onProgress?: ImportProgressCallback): Promise<string> {
+  onProgress?.({ phase: "reading", percent: 18, message: "Reading text" });
+  const text = await file.text();
+  onProgress?.({ phase: "reading", percent: 84, message: "Text loaded" });
+  return text;
 }

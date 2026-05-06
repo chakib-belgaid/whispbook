@@ -3,10 +3,19 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-export async function extractPdfText(file: File): Promise<string> {
+export interface PdfProgress {
+  pageNumber: number;
+  pageCount: number;
+  percent: number;
+}
+
+export type PdfProgressCallback = (progress: PdfProgress) => void;
+
+export async function extractPdfText(file: File, onProgress?: PdfProgressCallback): Promise<string> {
   const data = await file.arrayBuffer();
   const document = await pdfjsLib.getDocument({ data }).promise;
   const pages: string[] = [];
+  onProgress?.({ pageNumber: 0, pageCount: document.numPages, percent: 0 });
 
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     const page = await document.getPage(pageNumber);
@@ -19,6 +28,11 @@ export async function extractPdfText(file: File): Promise<string> {
     if (text) {
       pages.push(text);
     }
+    onProgress?.({
+      pageNumber,
+      pageCount: document.numPages,
+      percent: Math.round((pageNumber / document.numPages) * 100)
+    });
   }
 
   const extracted = pages.join("\n\n").trim();

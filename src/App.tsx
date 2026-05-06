@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { usePiperPlayback } from "./hooks/usePiperPlayback";
-import { documentFromFile, documentFromText } from "./lib/files";
+import { documentFromFile, documentFromText, type ImportProgress } from "./lib/files";
 import { DEFAULT_SETTINGS } from "./lib/settings";
 import { useLibrary } from "./state/useLibrary";
 import type { ReaderSettings, StoredDocument, TextSegment, VoiceQuality } from "./types";
@@ -35,6 +35,7 @@ function App() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -64,16 +65,27 @@ function App() {
 
     setImporting(true);
     setImportError(null);
+    setImportProgress({ phase: "reading", percent: 1, message: "Opening book" });
     try {
-      const document = await documentFromFile(file);
+      const document = await documentFromFile(file, (progress) => {
+        setImportProgress((current) => mergeImportProgress(current, progress));
+      });
       if (document.segments.length === 0) {
         throw new Error("No readable text found.");
       }
+      setImportProgress((current) =>
+        mergeImportProgress(current, { phase: "saving", percent: 98, message: "Saving to device" })
+      );
       await importDocument(document);
+      setImportProgress((current) =>
+        mergeImportProgress(current, { phase: "done", percent: 100, message: "Book ready" })
+      );
+      await delay(260);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : String(error));
     } finally {
       setImporting(false);
+      setImportProgress(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -132,7 +144,7 @@ function App() {
           <FileUp size={18} />
           <span>{importing ? "Importing" : "Import"}</span>
         </button>
-        <button className="secondary-action" type="button" onClick={() => setPasteOpen(true)}>
+        <button className="secondary-action" type="button" onClick={() => setPasteOpen(true)} disabled={importing}>
           <ClipboardPaste size={18} />
           <span>Paste</span>
         </button>
@@ -218,6 +230,8 @@ function App() {
           onChange={(next) => void updateSettings(next)}
         />
       )}
+
+      {importProgress && <BookImportOverlay progress={importProgress} />}
     </main>
   );
 }
@@ -418,6 +432,54 @@ function downloadLabel(download: { progress: number; label: string } | null, sta
     return "Playing";
   }
   return "Tap a paragraph";
+}
+
+function BookImportOverlay({ progress }: { progress: ImportProgress }) {
+  const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+  const pageLabel =
+    progress.pageCount && progress.pageNumber
+      ? `Page ${progress.pageNumber} of ${progress.pageCount}`
+      : progress.phase === "extracting"
+        ? "Scanning pages"
+        : "Preparing text";
+
+  return (
+    <div className="book-loader-backdrop" role="status" aria-live="polite" aria-label={`Importing book ${percent}%`}>
+      <section className="book-loader">
+        <div className="book-stage" aria-hidden="true">
+          <div className="book-cover" />
+          <div className="book-page left-page">
+            <span>{pageLabel}</span>
+            <strong>{percent}%</strong>
+          </div>
+          <div className="book-page right-page">
+            <span>{progress.message}</span>
+            <strong>{percent}%</strong>
+          </div>
+          <div className="turning-page" />
+        </div>
+        <div className="loader-copy">
+          <strong>{progress.message}</strong>
+          <span>{pageLabel}</span>
+        </div>
+        <div className="loader-progress" aria-hidden="true">
+          <span style={{ width: `${percent}%` }} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function mergeImportProgress(current: ImportProgress | null, next: ImportProgress): ImportProgress {
+  return {
+    ...next,
+    pageNumber: next.pageNumber ?? current?.pageNumber,
+    pageCount: next.pageCount ?? current?.pageCount
+  };
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 export default App;

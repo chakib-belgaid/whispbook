@@ -31,10 +31,16 @@ describe("PDF text extraction", () => {
       })
     });
     const { extractPdfText } = await import("./pdf");
+    const progress: Array<{ pageNumber: number; pageCount: number; percent: number }> = [];
 
-    const text = await extractPdfText(pdfFile("book.pdf"));
+    const text = await extractPdfText(pdfFile("book.pdf"), (next) => progress.push(next));
 
     expect(text).toBe("First page\n\nSecond page");
+    expect(progress).toEqual([
+      { pageNumber: 0, pageCount: 2, percent: 0 },
+      { pageNumber: 1, pageCount: 2, percent: 50 },
+      { pageNumber: 2, pageCount: 2, percent: 100 }
+    ]);
   });
 
   it("rejects PDFs without selectable text", async () => {
