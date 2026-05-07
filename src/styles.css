@@ -280,6 +280,7 @@ button {
 
 .text-segment {
   width: 100%;
+  scroll-margin: 92px 0 118px;
   border: 0;
   border-radius: 8px;
   padding: 12px 12px;
@@ -297,11 +298,16 @@ button {
 }
 
 .text-segment.is-reading {
+  background: #fff8ed;
+  box-shadow: inset 4px 0 0 rgba(217, 119, 6, 0.36);
+}
+
+.text-segment.is-current-reading {
   background: #fff2df;
   box-shadow: inset 4px 0 0 #d97706;
 }
 
-.text-segment.is-reading.is-selected {
+.text-segment.is-current-reading.is-selected {
   background:
     linear-gradient(90deg, rgba(47, 143, 131, 0.15), transparent 26%),
     #fff2df;

@@ -13,9 +13,26 @@ class MockUtterance {
   voice: SpeechSynthesisVoice | null = null;
   onend: ((event: SpeechSynthesisEvent) => void) | null = null;
   onerror: ((event: SpeechSynthesisErrorEvent) => void) | null = null;
+  onboundary: ((event: SpeechSynthesisEvent) => void) | null = null;
 
   constructor(text: string) {
     this.text = text;
+  }
+}
+
+class MockAudio {
+  src: string;
+  loop = false;
+  preload = "";
+  volume = 1;
+  play = vi.fn(() => Promise.resolve());
+  pause = vi.fn();
+  load = vi.fn();
+  setAttribute = vi.fn();
+  removeAttribute = vi.fn();
+
+  constructor(src: string) {
+    this.src = src;
   }
 }
 
@@ -36,6 +53,7 @@ describe("useSpeechPlayback", () => {
     spoken = [];
     currentUtterance = null;
     vi.stubGlobal("SpeechSynthesisUtterance", MockUtterance);
+    vi.stubGlobal("Audio", MockAudio);
     speechSynthesisMock = {
       paused: false,
       pending: false,
@@ -81,6 +99,14 @@ describe("useSpeechPlayback", () => {
 
     expect(spoken[0].text).toBe("First.\n\nSecond.");
     expect(result.current.activeSegmentIds).toEqual(document.segments.map((segment) => segment.id));
+    await act(async () => {
+      spoken[0].onboundary?.({ charIndex: "First.\n\n".length } as SpeechSynthesisEvent);
+      await Promise.resolve();
+    });
+
+    expect(result.current.activeSegmentId).toBe(document.segments[1].id);
+    expect(result.current.activeSegmentIds).toEqual(document.segments.map((segment) => segment.id));
+
     await act(async () => {
       spoken[0].onend?.({} as SpeechSynthesisEvent);
       await playPromise!;
@@ -132,6 +158,44 @@ describe("useSpeechPlayback", () => {
     expect(spoken).toHaveLength(1);
     expect(onProgress).toHaveBeenCalledWith(document.id, document.segments[0].id);
     expect(result.current.status).toBe("paused");
+  });
+
+  it("keeps speaking when the app is hidden", async () => {
+    const document = documentFromText("First. Second.", "sample.txt", "text");
+    const onProgress = vi.fn(() => Promise.resolve());
+    const settings = { ...DEFAULT_SETTINGS, paragraphGapMs: 0 };
+    const { result } = renderHook(() => useSpeechPlayback({ document, settings, onProgress }));
+
+    let playPromise: Promise<void>;
+    await act(async () => {
+      playPromise = result.current.playFrom(document.segments[0].id);
+      await Promise.resolve();
+    });
+
+    const cancelCallsBeforeHidden = vi.mocked(speechSynthesisMock.cancel).mock.calls.length;
+
+    await act(async () => {
+      Object.defineProperty(window.document, "visibilityState", {
+        configurable: true,
+        value: "hidden"
+      });
+      window.document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+
+    Object.defineProperty(window.document, "visibilityState", {
+      configurable: true,
+      value: "visible"
+    });
+
+    expect(result.current.status).toBe("playing");
+    expect(speechSynthesisMock.cancel).toHaveBeenCalledTimes(cancelCallsBeforeHidden);
+    expect(onProgress).toHaveBeenCalledWith(document.id, document.segments[0].id);
+
+    await act(async () => {
+      spoken[0].onend?.({} as SpeechSynthesisEvent);
+      await playPromise!;
+    });
   });
 
   it("speaks streamed PDFs in ten paragraph windows", async () => {

@@ -281,6 +281,7 @@ function App() {
         loading={loading}
         document={activeDocument}
         readingSegmentIds={playback.status === "playing" ? playback.activeSegmentIds : []}
+        currentReadingSegmentId={playback.status === "playing" ? playback.activeSegmentId : null}
         selectedSegmentId={selectedSegmentId}
         onSegmentTap={(segment) => {
           const now = Date.now();
@@ -338,12 +339,38 @@ interface ReaderViewProps {
   loading: boolean;
   document: StoredDocument | null;
   readingSegmentIds: string[];
+  currentReadingSegmentId: string | null;
   selectedSegmentId: string | null;
   onSegmentTap: (segment: TextSegment) => void;
 }
 
-function ReaderView({ loading, document, readingSegmentIds, selectedSegmentId, onSegmentTap }: ReaderViewProps) {
+function ReaderView({
+  loading,
+  document,
+  readingSegmentIds,
+  currentReadingSegmentId,
+  selectedSegmentId,
+  onSegmentTap
+}: ReaderViewProps) {
   const readingSegmentIdSet = useMemo(() => new Set(readingSegmentIds), [readingSegmentIds]);
+  const segmentElementsRef = useRef(new Map<string, HTMLButtonElement>());
+
+  useEffect(() => {
+    if (!currentReadingSegmentId || window.document.visibilityState === "hidden") {
+      return;
+    }
+
+    const element = segmentElementsRef.current.get(currentReadingSegmentId);
+    if (!element || isElementVisibleInReaderViewport(element)) {
+      return;
+    }
+
+    element.scrollIntoView({
+      block: "center",
+      inline: "nearest",
+      behavior: "smooth"
+    });
+  }, [currentReadingSegmentId]);
 
   if (loading) {
     return <section className="empty-state">Loading</section>;
@@ -364,8 +391,15 @@ function ReaderView({ loading, document, readingSegmentIds, selectedSegmentId, o
       {document.segments.map((segment) => (
         <button
           key={segment.id}
+          ref={(element) => {
+            if (element) {
+              segmentElementsRef.current.set(segment.id, element);
+              return;
+            }
+            segmentElementsRef.current.delete(segment.id);
+          }}
           type="button"
-          className={segmentClassName(segment.id, readingSegmentIdSet, selectedSegmentId)}
+          className={segmentClassName(segment.id, readingSegmentIdSet, currentReadingSegmentId, selectedSegmentId)}
           onClick={() => onSegmentTap(segment)}
         >
           {segment.text}
@@ -375,7 +409,12 @@ function ReaderView({ loading, document, readingSegmentIds, selectedSegmentId, o
   );
 }
 
-function segmentClassName(segmentId: string, readingSegmentIds: Set<string>, selectedSegmentId: string | null): string {
+function segmentClassName(
+  segmentId: string,
+  readingSegmentIds: Set<string>,
+  currentReadingSegmentId: string | null,
+  selectedSegmentId: string | null
+): string {
   const classes = ["text-segment"];
   if (segmentId === selectedSegmentId) {
     classes.push("is-selected");
@@ -383,7 +422,17 @@ function segmentClassName(segmentId: string, readingSegmentIds: Set<string>, sel
   if (readingSegmentIds.has(segmentId)) {
     classes.push("is-reading");
   }
+  if (segmentId === currentReadingSegmentId) {
+    classes.push("is-current-reading");
+  }
   return classes.join(" ");
+}
+
+function isElementVisibleInReaderViewport(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect();
+  const topInset = 12;
+  const bottomInset = 104;
+  return rect.top >= topInset && rect.bottom <= window.innerHeight - bottomInset;
 }
 
 interface PlaybackBarProps {
