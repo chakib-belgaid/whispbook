@@ -8,8 +8,5 @@ export default defineConfig({
   },
   build: {
     target: "es2022"
-  },
-  optimizeDeps: {
-    exclude: ["onnxruntime-web"]
   }
 });

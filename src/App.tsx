@@ -12,12 +12,19 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePiperPlayback } from "./hooks/usePiperPlayback";
+import { useSpeechPlayback } from "./hooks/useSpeechPlayback";
+import { useSpeechVoices } from "./hooks/useSpeechVoices";
 import { createStreamingPdfImport, documentFromFile, documentFromText, type ImportProgress } from "./lib/files";
 import { DEFAULT_SETTINGS } from "./lib/settings";
+import {
+  ENGLISH_SPEECH_LANGUAGE,
+  SYSTEM_VOICE_URI,
+  groupVoiceOptionsByLanguage,
+  languageLabel,
+  voicesToOptions
+} from "./lib/speechVoices";
 import { useLibrary } from "./state/useLibrary";
-import type { ReaderSettings, StoredDocument, TextSegment, VoiceQuality } from "./types";
-import { voiceCatalog, voiceForQuality } from "./voices";
+import type { ReaderSettings, StoredDocument, TextSegment } from "./types";
 
 function App() {
   const {
@@ -45,8 +52,10 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pasteTextRef = useRef<HTMLTextAreaElement | null>(null);
   const lastSegmentTapRef = useRef<{ segmentId: string; time: number } | null>(null);
+  const speechVoices = useSpeechVoices();
+  const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
 
-  const playback = usePiperPlayback({
+  const playback = useSpeechPlayback({
     document: activeDocument,
     settings: readerSettings,
     onProgress: persistProgress
@@ -69,6 +78,12 @@ function App() {
   useEffect(() => {
     setSelectedSegmentId(activeDocument?.cursorSegmentId ?? activeDocument?.segments[0]?.id ?? null);
   }, [activeDocument?.id]);
+
+  useEffect(() => {
+    if ((playback.status === "paused" || playback.status === "idle") && playback.activeSegmentId) {
+      setSelectedSegmentId(playback.activeSegmentId);
+    }
+  }, [playback.activeSegmentId, playback.status]);
 
   async function handleFiles(files: FileList | null): Promise<void> {
     const file = files?.[0];
@@ -181,7 +196,7 @@ function App() {
           <BookOpen aria-hidden="true" size={22} />
           <div>
             <h1>Whispbook</h1>
-            <p>{activeDocument ? activeDocument.title : "Local Piper reader"}</p>
+            <p>{activeDocument ? activeDocument.title : "Android speech reader"}</p>
           </div>
         </div>
         <button className="icon-button" type="button" onClick={() => setSettingsOpen(true)} aria-label="Settings">
@@ -265,7 +280,7 @@ function App() {
       <ReaderView
         loading={loading}
         document={activeDocument}
-        readingSegmentId={playback.status === "playing" ? playback.activeSegmentId : null}
+        readingSegmentIds={playback.status === "playing" ? playback.activeSegmentIds : []}
         selectedSegmentId={selectedSegmentId}
         onSegmentTap={(segment) => {
           const now = Date.now();
@@ -290,7 +305,7 @@ function App() {
         status={playback.status}
         activeIndex={activeIndex}
         error={playback.error}
-        download={playback.download}
+        message={playback.message}
         onToggle={() => void playback.toggle(selectedSegmentId)}
         onSettings={() => setSettingsOpen(true)}
         onDelete={async () => {
@@ -305,6 +320,10 @@ function App() {
       {settingsOpen && (
         <SettingsSheet
           settings={readerSettings}
+          voices={speechVoices.voices}
+          speechSupported={speechVoices.supported}
+          voicesLoaded={speechVoices.loaded}
+          wakeLockSupported={wakeLockSupported}
           onClose={() => setSettingsOpen(false)}
           onChange={(next) => void updateSettings(next)}
         />
@@ -318,12 +337,14 @@ function App() {
 interface ReaderViewProps {
   loading: boolean;
   document: StoredDocument | null;
-  readingSegmentId: string | null;
+  readingSegmentIds: string[];
   selectedSegmentId: string | null;
   onSegmentTap: (segment: TextSegment) => void;
 }
 
-function ReaderView({ loading, document, readingSegmentId, selectedSegmentId, onSegmentTap }: ReaderViewProps) {
+function ReaderView({ loading, document, readingSegmentIds, selectedSegmentId, onSegmentTap }: ReaderViewProps) {
+  const readingSegmentIdSet = useMemo(() => new Set(readingSegmentIds), [readingSegmentIds]);
+
   if (loading) {
     return <section className="empty-state">Loading</section>;
   }
@@ -344,7 +365,7 @@ function ReaderView({ loading, document, readingSegmentId, selectedSegmentId, on
         <button
           key={segment.id}
           type="button"
-          className={segmentClassName(segment.id, readingSegmentId, selectedSegmentId)}
+          className={segmentClassName(segment.id, readingSegmentIdSet, selectedSegmentId)}
           onClick={() => onSegmentTap(segment)}
         >
           {segment.text}
@@ -354,12 +375,12 @@ function ReaderView({ loading, document, readingSegmentId, selectedSegmentId, on
   );
 }
 
-function segmentClassName(segmentId: string, readingSegmentId: string | null, selectedSegmentId: string | null): string {
+function segmentClassName(segmentId: string, readingSegmentIds: Set<string>, selectedSegmentId: string | null): string {
   const classes = ["text-segment"];
   if (segmentId === selectedSegmentId) {
     classes.push("is-selected");
   }
-  if (segmentId === readingSegmentId) {
+  if (readingSegmentIds.has(segmentId)) {
     classes.push("is-reading");
   }
   return classes.join(" ");
@@ -370,7 +391,7 @@ interface PlaybackBarProps {
   status: string;
   activeIndex: number;
   error: string | null;
-  download: { progress: number; label: string } | null;
+  message: string | null;
   onToggle: () => void;
   onSettings: () => void;
   onDelete: () => void;
@@ -381,7 +402,7 @@ function PlaybackBar({
   status,
   activeIndex,
   error,
-  download,
+  message,
   onToggle,
   onSettings,
   onDelete
@@ -406,7 +427,7 @@ function PlaybackBar({
       </button>
       <div className="playback-meta">
         <strong>{document ? playbackPrimaryLabel(document, activeIndex) : "Ready"}</strong>
-        <span>{error ?? downloadLabel(download, status, document)}</span>
+        <span>{error ?? playbackStatusLabel(message, status, document)}</span>
       </div>
       <button className="icon-button" type="button" onClick={onSettings} aria-label="Playback settings">
         <SlidersHorizontal size={21} />
@@ -420,14 +441,31 @@ function PlaybackBar({
 
 function SettingsSheet({
   settings,
+  voices,
+  speechSupported,
+  voicesLoaded,
+  wakeLockSupported,
   onClose,
   onChange
 }: {
   settings: ReaderSettings;
+  voices: SpeechSynthesisVoice[];
+  speechSupported: boolean;
+  voicesLoaded: boolean;
+  wakeLockSupported: boolean;
   onClose: () => void;
   onChange: (settings: Partial<ReaderSettings>) => void;
 }) {
-  const selectedVoice = voiceForQuality(settings.quality);
+  const voiceOptions = voicesToOptions(voices);
+  const voiceGroups = groupVoiceOptionsByLanguage(voiceOptions);
+  const selectedVoiceURI = voiceOptions.some((voice) => voice.voiceURI === settings.voiceURI)
+    ? settings.voiceURI
+    : SYSTEM_VOICE_URI;
+  const capabilityNotes = [
+    !speechSupported ? "Android speech is not available in this browser." : "",
+    speechSupported && voicesLoaded && voiceOptions.length === 0 ? "No English device voices reported yet." : "",
+    !wakeLockSupported ? "Keep awake is not supported in this browser." : ""
+  ].filter(Boolean);
 
   return (
     <div className="sheet-backdrop" role="presentation" onClick={onClose}>
@@ -435,7 +473,7 @@ function SettingsSheet({
         <header>
           <div>
             <h2>Settings</h2>
-            <p>{selectedVoice.language}</p>
+            <p>{speechSupported ? languageLabel(ENGLISH_SPEECH_LANGUAGE) : "Speech unavailable"}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close settings">
             <X size={21} />
@@ -447,25 +485,19 @@ function SettingsSheet({
           <select
             id="voice"
             name="voice"
-            value={settings.voiceId}
-            onChange={(event) => onChange({ voiceId: event.currentTarget.value })}
+            value={selectedVoiceURI}
+            onChange={(event) => onChange({ voiceURI: event.currentTarget.value })}
+            disabled={!speechSupported}
           >
-            <option value="en_US-lessac">Lessac</option>
-          </select>
-        </label>
-
-        <label className="field">
-          <span>Quality</span>
-          <select
-            id="quality"
-            name="quality"
-            value={settings.quality}
-            onChange={(event) => onChange({ quality: event.currentTarget.value as VoiceQuality })}
-          >
-            {voiceCatalog.map((voice) => (
-              <option key={voice.id} value={voice.quality}>
-                {voice.quality} ({voice.sizeLabel})
-              </option>
+            <option value={SYSTEM_VOICE_URI}>System default</option>
+            {[...voiceGroups.entries()].map(([language, options]) => (
+              <optgroup key={language} label={languageLabel(language)}>
+                {options.map((voice) => (
+                  <option key={voice.voiceURI} value={voice.voiceURI}>
+                    {voice.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -481,10 +513,28 @@ function SettingsSheet({
             name="speed"
             type="range"
             min="0.6"
-            max="2"
+            max="2.5"
             step="0.1"
             value={settings.speed}
             onChange={(event) => onChange({ speed: Number(event.currentTarget.value) })}
+          />
+        </label>
+
+        <label className="range-field">
+          <span>
+            <SlidersHorizontal size={18} />
+            Tone
+            <strong>{settings.pitch.toFixed(1)}</strong>
+          </span>
+          <input
+            id="pitch"
+            name="pitch"
+            type="range"
+            min="0"
+            max="2"
+            step="0.1"
+            value={settings.pitch}
+            onChange={(event) => onChange({ pitch: Number(event.currentTarget.value) })}
           />
         </label>
 
@@ -499,12 +549,55 @@ function SettingsSheet({
             name="volume"
             type="range"
             min="0"
-            max="1.5"
+            max="1"
             step="0.05"
             value={settings.volume}
             onChange={(event) => onChange({ volume: Number(event.currentTarget.value) })}
           />
         </label>
+
+        <label className="range-field">
+          <span>
+            <Pause size={18} />
+            Window pause
+            <strong>{formatParagraphGap(settings.paragraphGapMs)}</strong>
+          </span>
+          <input
+            id="paragraph-gap"
+            name="paragraph-gap"
+            type="range"
+            min="0"
+            max="3000"
+            step="100"
+            value={settings.paragraphGapMs}
+            onChange={(event) => onChange({ paragraphGapMs: Number(event.currentTarget.value) })}
+          />
+        </label>
+
+        <label className="toggle-field">
+          <input
+            id="auto-advance"
+            name="auto-advance"
+            type="checkbox"
+            checked={settings.autoAdvance}
+            onChange={(event) => onChange({ autoAdvance: event.currentTarget.checked })}
+          />
+          <span>Auto-advance</span>
+        </label>
+
+        <label className="toggle-field">
+          <input
+            id="keep-awake"
+            name="keep-awake"
+            type="checkbox"
+            checked={settings.keepAwake && wakeLockSupported}
+            disabled={!wakeLockSupported}
+            onChange={(event) => onChange({ keepAwake: event.currentTarget.checked })}
+          />
+          <span>Keep screen awake</span>
+        </label>
+
+        {capabilityNotes.length > 0 && <p className="capability-note">{capabilityNotes.join(" ")}</p>}
       </section>
     </div>
   );
@@ -518,27 +611,27 @@ function playbackPrimaryLabel(document: StoredDocument, activeIndex: number): st
   return `${activeIndex + 1} / ${document.segments.length}`;
 }
 
-function downloadLabel(download: { progress: number; label: string } | null, status: string, document: StoredDocument | null): string {
-  if (download) {
-    if (status === "loading" && download.label === "Voice ready") {
-      return "Generating first audio";
-    }
-    const percent = download.progress > 0 ? ` ${Math.round(download.progress * 100)}%` : "";
-    return `${download.label}${percent}`;
+function playbackStatusLabel(message: string | null, status: string, document: StoredDocument | null): string {
+  if (message) {
+    return message;
   }
   if (status === "loading") {
-    return "Preparing voice";
+    return "Preparing speech";
   }
   if (status === "paused") {
     return "Paused";
   }
   if (status === "playing") {
-    return "Playing";
+    return "Reading";
   }
   if (document && isExtractingPdf(document)) {
     return documentSubtitle(document);
   }
   return "Tap a paragraph";
+}
+
+function formatParagraphGap(milliseconds: number): string {
+  return milliseconds === 0 ? "Off" : `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
 function BookImportOverlay({ progress }: { progress: ImportProgress }) {

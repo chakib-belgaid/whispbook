@@ -419,7 +419,8 @@ button {
 }
 
 .field,
-.range-field {
+.range-field,
+.toggle-field {
   display: grid;
   gap: 9px;
   font-weight: 700;
@@ -445,6 +446,29 @@ button {
 .range-field input {
   width: 100%;
   accent-color: #2f8f83;
+}
+
+.toggle-field {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.toggle-field input {
+  width: 20px;
+  height: 20px;
+  accent-color: #2f8f83;
+}
+
+.toggle-field input:disabled + span {
+  color: #8a9693;
+}
+
+.capability-note {
+  margin: 0;
+  color: #9b2c2c;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .visually-hidden {

@@ -40,12 +40,30 @@ describe("local library storage", () => {
   });
 
   it("persists normalized reader settings", async () => {
-    await saveSettings({ voiceId: "en_US-lessac", quality: "low", speed: 1.5, volume: 1.2 });
+    await saveSettings({
+      voiceURI: "voice-a",
+      language: "en-US",
+      speed: 1.5,
+      pitch: 1.2,
+      volume: 0.8,
+      paragraphGapMs: 1200,
+      autoAdvance: false,
+      keepAwake: false
+    });
 
     await closeDbForTests();
     const stored = await getSettings();
 
-    expect(stored).toEqual({ voiceId: "en_US-lessac", quality: "low", speed: 1.5, volume: 1.2 });
+    expect(stored).toEqual({
+      voiceURI: "voice-a",
+      language: "en-US",
+      speed: 1.5,
+      pitch: 1.2,
+      volume: 0.8,
+      paragraphGapMs: 1200,
+      autoAdvance: false,
+      keepAwake: false
+    });
   });
 
   it("preserves cursor while background PDF pages are appended", async () => {

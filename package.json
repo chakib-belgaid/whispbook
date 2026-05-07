@@ -13,9 +13,7 @@
   "dependencies": {
     "idb": "^8.0.3",
     "lucide-react": "^0.468.0",
-    "onnxruntime-web": "^1.23.2",
     "pdfjs-dist": "^5.4.394",
-    "phonemizer": "^1.2.1",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
   },
