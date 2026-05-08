@@ -60,13 +60,89 @@ const defaultStyleDraft: StyleOverride = {
   temperature: 0.8,
   top_p: 1,
   paragraph_gap_ms: 450,
+  comma_pause_ms: 160,
   prompt_prefix: ""
 };
+
+type ThemeName = "default" | "fantasy";
+type NumericStyleKey = Extract<
+  keyof StyleOverride,
+  "speed" | "exaggeration" | "cfg_weight" | "temperature" | "top_p" | "paragraph_gap_ms" | "comma_pause_ms"
+>;
+
+interface RangeSettingConfig {
+  key: NumericStyleKey;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  defaultValue: number;
+  suffix?: string;
+}
+
+interface EngineSettingsConfig {
+  language: boolean;
+  promptPrefix: boolean;
+  ranges: RangeSettingConfig[];
+}
+
+const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> = {
+  kokoro: {
+    language: true,
+    promptPrefix: false,
+    ranges: [
+      { key: "speed", label: "Speed", min: 0.7, max: 1.4, step: 0.01, defaultValue: 1, suffix: "x" },
+      { key: "paragraph_gap_ms", label: "Paragraph Pause", min: 0, max: 1500, step: 25, defaultValue: 450, suffix: "ms" },
+      { key: "comma_pause_ms", label: "Comma Pause", min: 0, max: 600, step: 20, defaultValue: 160, suffix: "ms" }
+    ]
+  },
+  chatterbox: {
+    language: true,
+    promptPrefix: true,
+    ranges: [
+      { key: "exaggeration", label: "Expression", min: 0, max: 1.2, step: 0.01, defaultValue: 0.5 },
+      { key: "cfg_weight", label: "CFG", min: 0, max: 1, step: 0.01, defaultValue: 0.5 },
+      { key: "temperature", label: "Temperature", min: 0.2, max: 1.2, step: 0.01, defaultValue: 0.8 },
+      { key: "top_p", label: "Top P", min: 0.1, max: 1, step: 0.01, defaultValue: 1 },
+      { key: "paragraph_gap_ms", label: "Paragraph Pause", min: 0, max: 1500, step: 25, defaultValue: 450, suffix: "ms" },
+      { key: "comma_pause_ms", label: "Comma Pause", min: 0, max: 600, step: 20, defaultValue: 160, suffix: "ms" }
+    ]
+  },
+  chatterbox_turbo: {
+    language: false,
+    promptPrefix: true,
+    ranges: [
+      { key: "temperature", label: "Temperature", min: 0.2, max: 1.2, step: 0.01, defaultValue: 0.8 },
+      { key: "top_p", label: "Top P", min: 0.1, max: 1, step: 0.01, defaultValue: 1 },
+      { key: "paragraph_gap_ms", label: "Paragraph Pause", min: 0, max: 1500, step: 25, defaultValue: 450, suffix: "ms" },
+      { key: "comma_pause_ms", label: "Comma Pause", min: 0, max: 600, step: 20, defaultValue: 160, suffix: "ms" }
+    ]
+  },
+  mock: {
+    language: false,
+    promptPrefix: false,
+    ranges: [
+      { key: "paragraph_gap_ms", label: "Paragraph Pause", min: 0, max: 1500, step: 25, defaultValue: 450, suffix: "ms" },
+      { key: "comma_pause_ms", label: "Comma Pause", min: 0, max: 600, step: 20, defaultValue: 160, suffix: "ms" }
+    ]
+  }
+};
+
+const themeStorageKey = "whispbook.theme";
+
+function readInitialTheme(): ThemeName {
+  if (typeof window === "undefined") {
+    return "default";
+  }
+
+  return window.localStorage.getItem(themeStorageKey) === "fantasy" ? "fantasy" : "default";
+}
 
 function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const styleReferenceRef = useRef<HTMLInputElement | null>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const [theme, setTheme] = useState<ThemeName>(readInitialTheme);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [styles, setStyles] = useState<VoiceStyle[]>([]);
   const [capabilities, setCapabilities] = useState<TTSCapabilities | null>(null);
@@ -88,6 +164,11 @@ function App() {
   useEffect(() => {
     void boot();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(themeStorageKey, theme);
+    document.documentElement.dataset.whispbookTheme = theme;
+  }, [theme]);
 
   useEffect(() => {
     if (!job || job.status === "done" || job.status === "error") {
@@ -337,9 +418,10 @@ function App() {
   const activeCapabilities = capabilityForEngine(capabilities, styleDraft.engine);
   const languageOptions = activeCapabilities?.languages ?? [];
   const voiceOptions = voiceOptionsForLanguage(activeCapabilities, styleDraft.language);
+  const activeEngineSettings = settingsForEngine(styleDraft.engine);
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell theme-${theme}`}>
       <header className="top-bar">
         <div className="brand-lockup">
           <BookOpen size={24} aria-hidden="true" />
@@ -351,6 +433,14 @@ function App() {
         <div className="status-lockup">
           <span className={health?.ffmpeg ? "status-pill is-ready" : "status-pill"}>ffmpeg</span>
           <span className={health?.engines.kokoro || health?.engines.chatterbox ? "status-pill is-ready" : "status-pill"}>tts</span>
+          <button
+            className="theme-toggle"
+            type="button"
+            aria-pressed={theme === "fantasy"}
+            onClick={() => setTheme((current) => (current === "fantasy" ? "default" : "fantasy"))}
+          >
+            <span>{theme === "fantasy" ? "Fantasy" : "Default"}</span>
+          </button>
         </div>
       </header>
 
@@ -609,69 +699,52 @@ function App() {
                   ))}
                 </select>
               </label>
-              <label className="field">
-                <span>Language</span>
-                <select
-                  value={styleDraft.language ?? languageOptions[0]?.value ?? ""}
-                  disabled={languageOptions.length === 0}
-                  onChange={(event) => {
-                    const language = event.currentTarget.value;
-                    setStyleDraft((current) =>
-                      normalizeStyleDraft({ ...current, language }, capabilities)
-                    );
-                  }}
-                >
-                  {languageOptions.map((language) => (
-                    <option key={language.value} value={language.value}>
-                      {language.label} ({language.value})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {activeEngineSettings.language && (
+                <label className="field">
+                  <span>Language</span>
+                  <select
+                    value={styleDraft.language ?? languageOptions[0]?.value ?? ""}
+                    disabled={languageOptions.length === 0}
+                    onChange={(event) => {
+                      const language = event.currentTarget.value;
+                      setStyleDraft((current) =>
+                        normalizeStyleDraft({ ...current, language }, capabilities)
+                      );
+                    }}
+                  >
+                    {languageOptions.map((language) => (
+                      <option key={language.value} value={language.value}>
+                        {language.label} ({language.value})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
 
-            <RangeControl
-              label="Speed"
-              value={styleDraft.speed ?? 1}
-              min={0.7}
-              max={1.4}
-              step={0.01}
-              suffix="x"
-              onChange={(speed) => setStyleDraft((current) => ({ ...current, speed }))}
-            />
-            <RangeControl
-              label="Expression"
-              value={styleDraft.exaggeration ?? 0.5}
-              min={0}
-              max={1.2}
-              step={0.01}
-              onChange={(exaggeration) => setStyleDraft((current) => ({ ...current, exaggeration }))}
-            />
-            <RangeControl
-              label="CFG"
-              value={styleDraft.cfg_weight ?? 0.5}
-              min={0}
-              max={1}
-              step={0.01}
-              onChange={(cfg_weight) => setStyleDraft((current) => ({ ...current, cfg_weight }))}
-            />
-            <RangeControl
-              label="Temperature"
-              value={styleDraft.temperature ?? 0.8}
-              min={0.2}
-              max={1.2}
-              step={0.01}
-              onChange={(temperature) => setStyleDraft((current) => ({ ...current, temperature }))}
-            />
-            <RangeControl
-              label="Pause"
-              value={styleDraft.paragraph_gap_ms ?? 450}
-              min={0}
-              max={1500}
-              step={25}
-              suffix="ms"
-              onChange={(paragraph_gap_ms) => setStyleDraft((current) => ({ ...current, paragraph_gap_ms }))}
-            />
+            {activeEngineSettings.ranges.map((control) => (
+              <RangeControl
+                key={control.key}
+                label={control.label}
+                value={styleDraft[control.key] ?? control.defaultValue}
+                min={control.min}
+                max={control.max}
+                step={control.step}
+                suffix={control.suffix}
+                onChange={(value) => setStyleDraft((current) => ({ ...current, [control.key]: value }))}
+              />
+            ))}
+
+            {activeEngineSettings.promptPrefix && (
+              <label className="field tts-prompt-field">
+                <span>Prompt Prefix</span>
+                <textarea
+                  rows={3}
+                  value={styleDraft.prompt_prefix ?? ""}
+                  onChange={(event) => setStyleDraft((current) => ({ ...current, prompt_prefix: event.currentTarget.value }))}
+                />
+              </label>
+            )}
 
             <div className="action-row">
               <button className="secondary-action" type="button" disabled={!selectedParagraph || Boolean(busy)} onClick={() => void handlePreview()}>
@@ -871,6 +944,7 @@ function styleToDraft(style: VoiceStyle): StyleOverride {
     temperature: style.temperature,
     top_p: style.top_p,
     paragraph_gap_ms: style.paragraph_gap_ms,
+    comma_pause_ms: style.comma_pause_ms,
     prompt_prefix: style.prompt_prefix
   };
 }
@@ -882,7 +956,9 @@ function normalizeStyleDraft(draft: StyleOverride, capabilities: TTSCapabilities
     return { ...draft, engine };
   }
 
-  const language = engineCapabilities.languages.some((option) => option.value === draft.language)
+  const language = engine === "chatterbox_turbo"
+    ? "en"
+    : engineCapabilities.languages.some((option) => option.value === draft.language)
     ? draft.language
     : engineCapabilities.languages[0]?.value;
   const availableVoices = voiceOptionsForLanguage(engineCapabilities, language);
@@ -894,6 +970,10 @@ function normalizeStyleDraft(draft: StyleOverride, capabilities: TTSCapabilities
     language,
     voice
   };
+}
+
+function settingsForEngine(engine: EngineName | undefined): EngineSettingsConfig {
+  return engineSettingsByModel[engine ?? "kokoro"] ?? engineSettingsByModel.kokoro!;
 }
 
 function capabilityForEngine(capabilities: TTSCapabilities | null, engine: EngineName | undefined): EngineCapabilities | null {

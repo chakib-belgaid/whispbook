@@ -50,6 +50,7 @@ export interface VoiceStyle {
   temperature: number;
   top_p: number;
   paragraph_gap_ms: number;
+  comma_pause_ms: number;
   prompt_prefix: string;
   reference_audio_url: string | null;
   custom: boolean;
@@ -83,6 +84,7 @@ export interface StyleOverride {
   temperature?: number;
   top_p?: number;
   paragraph_gap_ms?: number;
+  comma_pause_ms?: number;
   prompt_prefix?: string;
 }
 
