@@ -254,21 +254,43 @@ def selected_chapter_ids(book: Book, requested_ids: List[str]) -> set[str]:
 
 def merge_style(base: VoiceStyle, override: object) -> VoiceStyle:
     payload = base.model_dump()
-    for field in [
-        "engine",
-        "voice",
-        "language",
-        "speed",
-        "exaggeration",
-        "cfg_weight",
-        "temperature",
-        "top_p",
-        "paragraph_gap_ms",
-        "prompt_prefix",
-    ]:
+    engine = getattr(override, "engine", None) or payload["engine"]
+    payload["engine"] = engine
+    for field in engine_style_fields(engine):
         value = getattr(override, field, None)
         if value is not None:
             payload[field] = value
+    return normalize_style_for_engine(VoiceStyle.model_validate(payload))
+
+
+def engine_style_fields(engine: str) -> List[str]:
+    shared_fields = ["voice", "paragraph_gap_ms", "comma_pause_ms"]
+    if engine == "kokoro":
+        return shared_fields + ["language", "speed"]
+    if engine == "chatterbox":
+        return shared_fields + ["language", "exaggeration", "cfg_weight", "temperature", "top_p", "prompt_prefix"]
+    if engine == "chatterbox_turbo":
+        return shared_fields + ["temperature", "top_p", "prompt_prefix"]
+    return ["paragraph_gap_ms", "comma_pause_ms"]
+
+
+def normalize_style_for_engine(style: VoiceStyle) -> VoiceStyle:
+    payload = style.model_dump()
+    engine = payload["engine"]
+    if engine == "kokoro":
+        payload.update(
+            {
+                "exaggeration": 0.5,
+                "cfg_weight": 0.5,
+                "temperature": 0.8,
+                "top_p": 1.0,
+                "prompt_prefix": "",
+            }
+        )
+    elif engine == "chatterbox":
+        payload["speed"] = 1.0
+    elif engine == "chatterbox_turbo":
+        payload.update({"language": "en", "speed": 1.0, "exaggeration": 0.5, "cfg_weight": 0.5})
     return VoiceStyle.model_validate(payload)
 
 

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import sys
 import types
 import wave
+from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .ffmpeg import concat_audio, normalize_wav
+from .ffmpeg import concat_audio, make_silence, normalize_wav
 from .models import VoiceStyle
 from .text_processing import split_long_paragraph
 
@@ -23,6 +25,16 @@ class BaseEngine:
 
     def synthesize(self, text: str, style: VoiceStyle, output_path: Path) -> None:
         raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class TTSUnit:
+    text: str = ""
+    pause_ms: int = 0
+
+    @property
+    def is_pause(self) -> bool:
+        return self.pause_ms > 0
 
 
 class KokoroEngine(BaseEngine):
@@ -179,35 +191,119 @@ class TTSManager:
         return self.engines[name]
 
     def synthesize(self, text: str, style: VoiceStyle, output_path: Path) -> None:
-        chunks = split_text_for_tts(style.prompt_prefix + text)
-        if len(chunks) == 1:
-            self.get_engine(style.engine).synthesize(chunks[0], style, output_path)
+        units = split_text_for_tts(style.prompt_prefix + text, comma_pause_ms=style.comma_pause_ms)
+        if len(units) == 1 and not units[0].is_pause:
+            self.get_engine(style.engine).synthesize(units[0].text, style, output_path)
             normalize_in_place(output_path)
             return
 
         chunk_dir = output_path.with_suffix("")
         chunk_dir.mkdir(parents=True, exist_ok=True)
         normalized_files: List[Path] = []
-        for index, chunk in enumerate(chunks):
-            raw_path = chunk_dir / f"chunk-{index:04d}.raw.wav"
-            normalized_path = chunk_dir / f"chunk-{index:04d}.wav"
-            self.get_engine(style.engine).synthesize(chunk, style, raw_path)
+        silence_files: Dict[int, Path] = {}
+        chunk_index = 0
+        for unit in units:
+            if unit.is_pause:
+                silence_path = silence_files.get(unit.pause_ms)
+                if silence_path is None:
+                    silence_path = chunk_dir / f"pause-{unit.pause_ms:04d}.wav"
+                    make_silence(silence_path, unit.pause_ms / 1000.0)
+                    silence_files[unit.pause_ms] = silence_path
+                normalized_files.append(silence_path)
+                continue
+
+            raw_path = chunk_dir / f"chunk-{chunk_index:04d}.raw.wav"
+            normalized_path = chunk_dir / f"chunk-{chunk_index:04d}.wav"
+            self.get_engine(style.engine).synthesize(unit.text, style, raw_path)
             normalize_wav(raw_path, normalized_path)
             normalized_files.append(normalized_path)
+            chunk_index += 1
         concat_audio(normalized_files, output_path)
 
 
-def split_text_for_tts(text: str) -> List[str]:
-    pieces: List[str] = []
+def split_text_for_tts(text: str, comma_pause_ms: int = 160) -> List[TTSUnit]:
+    units: List[TTSUnit] = []
     for paragraph in split_long_paragraph(text):
-        if len(paragraph) <= 640:
-            pieces.append(paragraph)
+        for unit in split_paused_paragraph(paragraph, comma_pause_ms):
+            if unit.is_pause:
+                if units and not units[-1].is_pause:
+                    units.append(unit)
+                continue
+            units.extend(TTSUnit(text=chunk) for chunk in split_tts_text(unit.text))
+
+    while units and units[-1].is_pause:
+        units.pop()
+    return units or [TTSUnit(text=".")]
+
+
+def split_paused_paragraph(paragraph: str, comma_pause_ms: int) -> List[TTSUnit]:
+    if comma_pause_ms <= 0:
+        return [TTSUnit(text=paragraph.strip())] if paragraph.strip() else []
+
+    units: List[TTSUnit] = []
+    buffer: List[str] = []
+    index = 0
+    while index < len(paragraph):
+        char = paragraph[index]
+        buffer.append(char)
+        if char in ",;:" and should_pause_after_punctuation(paragraph, index):
+            text = clean_tts_piece("".join(buffer))
+            if text:
+                units.append(TTSUnit(text=text))
+                units.append(TTSUnit(pause_ms=pause_for_punctuation(char, comma_pause_ms)))
+            buffer = []
+            index += 1
+            while index < len(paragraph) and paragraph[index].isspace():
+                index += 1
             continue
-        for index in range(0, len(paragraph), 640):
-            piece = paragraph[index : index + 640].strip()
-            if piece:
-                pieces.append(piece)
-    return pieces or ["."]
+        index += 1
+
+    text = clean_tts_piece("".join(buffer))
+    if text:
+        units.append(TTSUnit(text=text))
+    return units
+
+
+def should_pause_after_punctuation(text: str, index: int) -> bool:
+    char = text[index]
+    next_index = index + 1
+    if next_index >= len(text) or not text[next_index].isspace():
+        return False
+    if char == ",":
+        previous_char = text[index - 1] if index > 0 else ""
+        next_non_space = next((candidate for candidate in text[next_index:] if not candidate.isspace()), "")
+        if previous_char.isdigit() and next_non_space.isdigit():
+            return False
+    return True
+
+
+def pause_for_punctuation(char: str, comma_pause_ms: int) -> int:
+    if char == ",":
+        return comma_pause_ms
+    return max(comma_pause_ms + 80, round(comma_pause_ms * 1.35))
+
+
+def split_tts_text(text: str, max_chars: int = 640) -> List[str]:
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks: List[str] = []
+    remaining = text
+    while len(remaining) > max_chars:
+        split_at = remaining.rfind(" ", 0, max_chars + 1)
+        if split_at < max_chars // 2:
+            split_at = max_chars
+        chunk = remaining[:split_at].strip()
+        if chunk:
+            chunks.append(chunk)
+        remaining = remaining[split_at:].strip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
+def clean_tts_piece(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def normalize_in_place(path: Path) -> None:

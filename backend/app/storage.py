@@ -81,20 +81,21 @@ def default_styles() -> Dict[str, VoiceStyle]:
             cfg_weight=0.5,
             temperature=0.8,
             paragraph_gap_ms=450,
+            comma_pause_ms=170,
         ),
         VoiceStyle(
             id="fantasy",
             name="Fantasy",
-            engine="chatterbox",
-            description="Warm, dramatic, deliberate pacing",
-            voice="af_heart",
-            language="en",
-            speed=0.92,
-            exaggeration=0.72,
-            cfg_weight=0.32,
-            temperature=0.86,
+            engine="kokoro",
+            description="Warm British fantasy narration with deliberate pacing",
+            voice="bm_george",
+            language="b",
+            speed=0.91,
+            exaggeration=0.5,
+            cfg_weight=0.5,
+            temperature=0.8,
             paragraph_gap_ms=620,
-            prompt_prefix="[deep breath] ",
+            comma_pause_ms=190,
         ),
         VoiceStyle(
             id="sci-fi",
@@ -108,6 +109,7 @@ def default_styles() -> Dict[str, VoiceStyle]:
             cfg_weight=0.45,
             temperature=0.78,
             paragraph_gap_ms=360,
+            comma_pause_ms=140,
         ),
         VoiceStyle(
             id="murder-mystery",
@@ -121,6 +123,7 @@ def default_styles() -> Dict[str, VoiceStyle]:
             cfg_weight=0.3,
             temperature=0.82,
             paragraph_gap_ms=720,
+            comma_pause_ms=210,
         ),
         VoiceStyle(
             id="nonfiction",
@@ -134,6 +137,7 @@ def default_styles() -> Dict[str, VoiceStyle]:
             cfg_weight=0.55,
             temperature=0.72,
             paragraph_gap_ms=420,
+            comma_pause_ms=150,
         ),
     ]
     return {style.id: style for style in styles}
@@ -211,4 +215,3 @@ def sanitize_filename(filename: str) -> str:
     base = os.path.basename(filename or "file")
     safe = "".join(char if char.isalnum() or char in "._-" else "-" for char in base)
     return safe.strip(".-") or "file"
-

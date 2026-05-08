@@ -127,6 +127,7 @@ async def create_custom_style(
         temperature=float(params.get("temperature", 0.8)),
         top_p=float(params.get("top_p", 1.0)),
         paragraph_gap_ms=int(params.get("paragraph_gap_ms", 450)),
+        comma_pause_ms=int(params.get("comma_pause_ms", 160)),
         prompt_prefix=params.get("prompt_prefix", ""),
         reference_audio_path=reference_path,
         reference_audio_url=reference_url,

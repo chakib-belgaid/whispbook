@@ -76,6 +76,7 @@ class VoiceStyle(BaseModel):
     temperature: float = 0.8
     top_p: float = 1.0
     paragraph_gap_ms: int = 450
+    comma_pause_ms: int = 160
     prompt_prefix: str = ""
     reference_audio_path: Optional[str] = None
     reference_audio_url: Optional[str] = None
@@ -108,6 +109,7 @@ class StyleOverride(BaseModel):
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     paragraph_gap_ms: Optional[int] = None
+    comma_pause_ms: Optional[int] = None
     prompt_prefix: Optional[str] = None
 
 
