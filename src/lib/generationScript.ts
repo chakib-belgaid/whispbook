@@ -200,7 +200,7 @@ def run(args: argparse.Namespace) -> int:
     job_id = job["id"]
     print(f"Started job: {job_id}")
     if args.detach:
-        print(f"Detached. Poll with: {api_path(api_url, f'/api/jobs/{job_id}')}")
+        print(f"Detached. Poll with: {api_path(api_url, '/api/jobs/' + job_id)}")
         return 0
 
     last_snapshot = None
