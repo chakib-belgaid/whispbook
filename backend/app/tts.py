@@ -37,6 +37,12 @@ class TTSUnit:
         return self.pause_ms > 0
 
 
+PAUSING_PUNCTUATION = ",;:"
+TRAILING_PAUSE_MARKS = set("\"')]}") | set(
+    "\u201d\u2019\u00bb\u203a\u300d\u300f"
+)
+
+
 class KokoroEngine(BaseEngine):
     name = "kokoro"
 
@@ -246,13 +252,16 @@ def split_paused_paragraph(paragraph: str, comma_pause_ms: int) -> List[TTSUnit]
     while index < len(paragraph):
         char = paragraph[index]
         buffer.append(char)
-        if char in ",;:" and should_pause_after_punctuation(paragraph, index):
+        if char in PAUSING_PUNCTUATION and should_pause_after_punctuation(paragraph, index):
+            pause_end = trailing_pause_boundary(paragraph, index)
+            if pause_end > index + 1:
+                buffer.append(paragraph[index + 1 : pause_end])
             text = clean_tts_piece("".join(buffer))
             if text:
                 units.append(TTSUnit(text=text))
                 units.append(TTSUnit(pause_ms=pause_for_punctuation(char, comma_pause_ms)))
             buffer = []
-            index += 1
+            index = pause_end
             while index < len(paragraph) and paragraph[index].isspace():
                 index += 1
             continue
@@ -266,15 +275,29 @@ def split_paused_paragraph(paragraph: str, comma_pause_ms: int) -> List[TTSUnit]
 
 def should_pause_after_punctuation(text: str, index: int) -> bool:
     char = text[index]
-    next_index = index + 1
-    if next_index >= len(text) or not text[next_index].isspace():
+    boundary = trailing_pause_boundary(text, index)
+    if boundary < len(text) and not text[boundary].isspace():
         return False
     if char == ",":
         previous_char = text[index - 1] if index > 0 else ""
-        next_non_space = next((candidate for candidate in text[next_index:] if not candidate.isspace()), "")
+        next_non_space = next(
+            (
+                candidate
+                for candidate in text[index + 1 :]
+                if not candidate.isspace() and candidate not in TRAILING_PAUSE_MARKS
+            ),
+            "",
+        )
         if previous_char.isdigit() and next_non_space.isdigit():
             return False
     return True
+
+
+def trailing_pause_boundary(text: str, index: int) -> int:
+    boundary = index + 1
+    while boundary < len(text) and text[boundary] in TRAILING_PAUSE_MARKS:
+        boundary += 1
+    return boundary
 
 
 def pause_for_punctuation(char: str, comma_pause_ms: int) -> int:

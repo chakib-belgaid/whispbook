@@ -26,6 +26,18 @@ def test_split_text_for_tts_does_not_pause_inside_numbers():
     ]
 
 
+def test_split_text_for_tts_pauses_after_commas_before_closing_quotes():
+    units = split_text_for_tts("Wait,\u201d she said, \u201clisten.\u201d", comma_pause_ms=220)
+
+    assert [(unit.text, unit.pause_ms) for unit in units] == [
+        ("Wait,\u201d", 0),
+        ("", 220),
+        ("she said,", 0),
+        ("", 220),
+        ("\u201clisten.\u201d", 0),
+    ]
+
+
 def test_merge_style_clears_chatterbox_prompt_when_switching_to_kokoro():
     base = VoiceStyle(
         id="dramatic",
