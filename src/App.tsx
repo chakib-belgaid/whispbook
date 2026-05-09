@@ -982,6 +982,19 @@ function App() {
             >
             {activeChapter && (
               <>
+                <div className="editor-toolbar" aria-label="Manuscript actions">
+                  <button
+                    className="secondary-action editor-save-action"
+                    type="button"
+                    disabled={!dirty || Boolean(busy)}
+                    onClick={() => void persistBook()}
+                  >
+                    <Save size={18} aria-hidden="true" />
+                    <span>
+                      {busy === "Saving" ? "Saving" : dirty ? "Save" : "Saved"}
+                    </span>
+                  </button>
+                </div>
                 <div className="manuscript-page">
                   <div className="page-ornament" aria-hidden="true">
                     <span />

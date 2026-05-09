@@ -729,6 +729,20 @@ summary:focus-visible,
   color: var(--ink);
 }
 
+.editor-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding: 14px 18px 0;
+}
+
+.editor-save-action {
+  min-height: 36px;
+  padding-inline: 12px;
+  color: #503116;
+  background: rgba(245, 222, 181, 0.62);
+}
+
 .manuscript-page {
   position: relative;
   flex: 1;
