@@ -114,7 +114,7 @@ button:disabled {
   margin: 0;
   border: 1px solid rgba(207, 148, 66, 0.45);
   border-radius: 999px;
-  padding: 6px 9px 6px 16px;
+  padding: 8px 16px;
   color: #f8d99b;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 0.94rem;
@@ -122,17 +122,6 @@ button:disabled {
   background: rgba(27, 14, 7, 0.78);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 229, 163, 0.12);
   backdrop-filter: blur(10px);
-}
-
-.status-gear {
-  display: inline-grid;
-  width: 29px;
-  height: 29px;
-  place-items: center;
-  border: 1px solid rgba(214, 154, 66, 0.4);
-  border-radius: 999px;
-  color: #f1c879;
-  background: rgba(255, 210, 131, 0.08);
 }
 
 .error-banner {
@@ -250,7 +239,8 @@ button:disabled {
   background: rgba(245, 222, 181, 0.42);
 }
 
-.book-title-field { margin-bottom: 18px; }
+.book-title-field,
+.book-switch-field { margin-bottom: 18px; }
 
 .field {
   display: grid;
@@ -375,7 +365,7 @@ button:disabled {
 
 .chapter-item {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto 18px;
+  grid-template-columns: minmax(0, 1fr) 18px;
   align-items: center;
   gap: 10px;
   min-height: 60px;
@@ -385,6 +375,24 @@ button:disabled {
   color: #f2d28f;
   text-align: left;
   background: rgba(20, 11, 7, 0.34);
+}
+
+.chapter-open-button {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.chapter-open-button:focus-visible,
+.chapter-item input:focus-visible {
+  outline: 2px solid rgba(248, 198, 106, 0.92);
+  outline-offset: 3px;
 }
 
 .chapter-item.is-active {
@@ -480,22 +488,29 @@ button:disabled {
   display: flex;
   justify-content: flex-end;
   margin: 0;
-  max-width: none;
-  pointer-events: none;
+  width: min(360px, calc(100% - 52px));
+  gap: 10px;
+  pointer-events: auto;
 }
 
-.manuscript-head .field { display: none; }
+.manuscript-head .field {
+  flex: 1;
+  min-width: 0;
+}
+
 .manuscript-head .status-badge {
+  align-self: end;
+  min-height: 36px;
   color: rgba(88, 55, 25, 0.52);
   font-size: 0.68rem;
 }
 
 .chapter-title-field input {
-  border-color: transparent;
+  border-color: rgba(105, 63, 24, 0.28);
   color: #5a3318;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 1.1rem;
-  background: rgba(255, 245, 218, 0.36);
+  background: rgba(255, 245, 218, 0.62);
 }
 
 .manuscript-page {
@@ -629,6 +644,11 @@ button:disabled {
 }
 
 .paragraph-block textarea:focus { box-shadow: none; }
+.paragraph-block textarea:focus-visible {
+  outline: 2px solid rgba(112, 71, 28, 0.78);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 5px rgba(247, 196, 106, 0.2);
+}
 .paragraph-block textarea:disabled { color: rgba(62, 44, 29, 0.46); text-decoration: line-through; }
 
 .restore-button {

@@ -13,7 +13,6 @@ import {
   Mic2,
   Play,
   Save,
-  Settings,
   Sparkles,
   Trash2,
   Upload,
@@ -56,19 +55,18 @@ import type {
 const defaultStyleDraft: StyleOverride = {
   style_id: "fantasy",
   engine: "kokoro",
-  voice: "af_heart",
-  language: "a",
-  speed: 1,
+  voice: "bm_george",
+  language: "b",
+  speed: 0.91,
   exaggeration: 0.5,
   cfg_weight: 0.5,
   temperature: 0.8,
   top_p: 1,
-  paragraph_gap_ms: 450,
-  comma_pause_ms: 170,
+  paragraph_gap_ms: 620,
+  comma_pause_ms: 190,
   prompt_prefix: "",
 };
 
-type ThemeName = "default" | "fantasy";
 type NumericStyleKey = Extract<
   keyof StyleOverride,
   | "speed"
@@ -253,23 +251,10 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
     },
   };
 
-const themeStorageKey = "whispbook.theme";
-
-function readInitialTheme(): ThemeName {
-  if (typeof window === "undefined") {
-    return "default";
-  }
-
-  return window.localStorage.getItem(themeStorageKey) === "fantasy"
-    ? "fantasy"
-    : "default";
-}
-
 function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const styleReferenceRef = useRef<HTMLInputElement | null>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
-  const [theme, setTheme] = useState<ThemeName>(readInitialTheme);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [styles, setStyles] = useState<VoiceStyle[]>([]);
   const [capabilities, setCapabilities] = useState<TTSCapabilities | null>(
@@ -298,11 +283,6 @@ function App() {
   useEffect(() => {
     void boot();
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(themeStorageKey, theme);
-    document.documentElement.dataset.whispbookTheme = theme;
-  }, [theme]);
 
   useEffect(() => {
     if (!job || job.status === "done" || job.status === "error") {
@@ -382,18 +362,7 @@ function App() {
         nextStyles[0];
       if (preferredStyle) {
         setStyleDraft(
-          normalizeStyleDraft(
-            {
-              ...styleToDraft(preferredStyle),
-              engine: defaultStyleDraft.engine,
-              voice: defaultStyleDraft.voice,
-              language: defaultStyleDraft.language,
-              speed: defaultStyleDraft.speed,
-              paragraph_gap_ms: defaultStyleDraft.paragraph_gap_ms,
-              comma_pause_ms: defaultStyleDraft.comma_pause_ms,
-            },
-            nextCapabilities,
-          ),
+          normalizeStyleDraft(styleToDraft(preferredStyle), nextCapabilities),
         );
       }
       setError(null);
@@ -630,26 +599,13 @@ function App() {
     styles.find((style) => style.id === styleDraft.style_id)?.name ?? "Fantasy";
 
   return (
-    <main className={`app-shell theme-${theme}`}>
+    <main className="app-shell">
       <header className="status-strip" aria-label="System status">
         <span>Engine: {formatEngineName(styleDraft.engine)}</span>
         <span aria-hidden="true">|</span>
         <span>Renderer: {health?.ffmpeg ? "FFMPEG" : "Unavailable"}</span>
         <span aria-hidden="true">|</span>
         <span>Style: {selectedStyleName}</span>
-        <button
-          className="status-gear"
-          type="button"
-          aria-label="Toggle theme"
-          aria-pressed={theme === "fantasy"}
-          onClick={() =>
-            setTheme((current) =>
-              current === "fantasy" ? "default" : "fantasy",
-            )
-          }
-        >
-          <Settings size={16} />
-        </button>
       </header>
 
       {error && <p className="error-banner">{error}</p>}
@@ -713,38 +669,40 @@ function App() {
               <span>Book</span>
               <span className="book-title-control">
                 <BookOpen size={21} aria-hidden="true" />
-                {books.length > 1 ? (
-                  <select
-                    value={book.id}
-                    onChange={(event) => {
-                      const next =
-                        books.find(
-                          (item) => item.id === event.currentTarget.value,
-                        ) ?? null;
-                      setBook(next);
-                      setActiveChapterId(next?.chapters[0]?.id ?? null);
-                      setSelectedParagraphId(
-                        next?.chapters[0]?.paragraphs[0]?.id ?? null,
-                      );
-                      setDirty(false);
-                    }}
-                  >
-                    {books.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.title}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    value={book.title}
-                    onChange={(event) =>
-                      updateBookTitle(event.currentTarget.value)
-                    }
-                  />
-                )}
+                <input
+                  value={book.title}
+                  onChange={(event) =>
+                    updateBookTitle(event.currentTarget.value)
+                  }
+                />
               </span>
             </label>
+            {books.length > 1 && (
+              <label className="field book-switch-field">
+                <span>Library</span>
+                <select
+                  value={book.id}
+                  onChange={(event) => {
+                    const next =
+                      books.find(
+                        (item) => item.id === event.currentTarget.value,
+                      ) ?? null;
+                    setBook(next);
+                    setActiveChapterId(next?.chapters[0]?.id ?? null);
+                    setSelectedParagraphId(
+                      next?.chapters[0]?.paragraphs[0]?.id ?? null,
+                    );
+                    setDirty(false);
+                  }}
+                >
+                  {books.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="panel-heading chapter-heading">
               <div>
@@ -1133,7 +1091,7 @@ function App() {
                   ref={styleReferenceRef}
                   className="visually-hidden"
                   type="file"
-                  accept="audio/*,.json,.whisp"
+                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
                   onChange={(event) =>
                     setCustomReference(event.currentTarget.files?.[0] ?? null)
                   }
@@ -1144,9 +1102,9 @@ function App() {
                   onClick={() => styleReferenceRef.current?.click()}
                 >
                   <Upload size={18} />
-                  <span>Import Style File</span>
+                  <span>Add Reference Audio</span>
                 </button>
-                <small>.json, .whisp</small>
+                <small>Audio file</small>
               </div>
               {(customReference || customName.trim()) && (
                 <details className="advanced-style" open>
@@ -1291,35 +1249,30 @@ function ChapterRow({
       : null;
 
   return (
-    <button
-      className={active ? "chapter-item is-active" : "chapter-item"}
-      type="button"
-      onClick={onOpen}
-    >
-      <span className="chapter-roman" aria-hidden="true">
-        {toRoman(chapter.index + 1)}
-      </span>
-      <span className="chapter-copy">
-        <strong>{chapter.title}</strong>
-        <small>
-          {chapter.paragraphs.filter((paragraph) => paragraph.included).length}{" "}
-          paragraphs
-        </small>
-      </span>
-      <span className="chapter-status">
-        <StatusBadge status={status} progress={progress} />
-      </span>
+    <div className={active ? "chapter-item is-active" : "chapter-item"}>
+      <button className="chapter-open-button" type="button" onClick={onOpen}>
+        <span className="chapter-roman" aria-hidden="true">
+          {toRoman(chapter.index + 1)}
+        </span>
+        <span className="chapter-copy">
+          <strong>{chapter.title}</strong>
+          <small>
+            {chapter.paragraphs.filter((paragraph) => paragraph.included)
+              .length}{" "}
+            paragraphs
+          </small>
+        </span>
+        <span className="chapter-status">
+          <StatusBadge status={status} progress={progress} />
+        </span>
+      </button>
       <input
         aria-label={`Select ${chapter.title}`}
         type="checkbox"
         checked={chapter.selected}
-        onChange={(event) => {
-          event.stopPropagation();
-          onToggle(event.currentTarget.checked);
-        }}
-        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => onToggle(event.currentTarget.checked)}
       />
-    </button>
+    </div>
   );
 }
 
