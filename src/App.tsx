@@ -1093,48 +1093,16 @@ function App() {
             >
             {activeChapter && (
               <>
-                <div className="editor-toolbar" aria-label="Manuscript actions">
-                  <div
-                    className="editor-history-actions"
-                    aria-label="Chapter history"
-                  >
-                    <button
-                      className="editor-icon-action"
-                      type="button"
-                      aria-label="Undo chapter edit"
-                      title="Undo chapter edit"
-                      disabled={!canUndoChapter || Boolean(busy)}
-                      onClick={undoActiveChapter}
-                    >
-                      <Undo2 size={18} aria-hidden="true" />
-                    </button>
-                    <button
-                      className="editor-icon-action"
-                      type="button"
-                      aria-label="Redo chapter edit"
-                      title="Redo chapter edit"
-                      disabled={!canRedoChapter || Boolean(busy)}
-                      onClick={redoActiveChapter}
-                    >
-                      <Redo2 size={18} aria-hidden="true" />
-                    </button>
-                  </div>
-                  <button
-                    className="secondary-action editor-save-action"
-                    type="button"
-                    disabled={!dirty || Boolean(busy)}
-                    onClick={() => void persistBook()}
-                  >
-                    <Save size={18} aria-hidden="true" />
-                    <span>
-                      {busy === "Saving" ? "Saving" : dirty ? "Save" : "Saved"}
-                    </span>
-                  </button>
-                </div>
                 <div className="manuscript-page">
-                  <div className="page-ornament" aria-hidden="true">
-                    <span />
-                  </div>
+                  <ManuscriptControls
+                    busy={busy}
+                    dirty={dirty}
+                    canUndo={canUndoChapter}
+                    canRedo={canRedoChapter}
+                    onUndo={undoActiveChapter}
+                    onRedo={redoActiveChapter}
+                    onSave={() => void persistBook()}
+                  />
                   <label className="markdown-heading">
                     <span aria-hidden="true">#</span>
                     <input
@@ -1661,6 +1629,93 @@ function UnsavedBookDialog({
   );
 }
 
+function ManuscriptControls({
+  busy,
+  dirty,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onSave,
+}: {
+  busy: string | null;
+  dirty: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  onSave: () => void;
+}) {
+  const isSaving = busy === "Saving";
+  const saveLabel = isSaving ? "Saving" : dirty ? "Save" : "Saved";
+  const saveStatus = isSaving
+    ? "Saving book edits"
+    : dirty
+      ? "Unsaved book edits"
+      : "Book edits saved";
+
+  return (
+    <div
+      className="manuscript-controls"
+      role="group"
+      aria-label="Manuscript actions"
+    >
+      <div
+        className="page-action-tabs"
+        role="group"
+        aria-label="Chapter history"
+      >
+        <button
+          className="page-action-tab"
+          type="button"
+          aria-label="Undo chapter edit"
+          title="Undo chapter edit"
+          disabled={!canUndo || Boolean(busy)}
+          onClick={onUndo}
+        >
+          <Undo2 size={17} aria-hidden="true" />
+        </button>
+        <button
+          className="page-action-tab"
+          type="button"
+          aria-label="Redo chapter edit"
+          title="Redo chapter edit"
+          disabled={!canRedo || Boolean(busy)}
+          onClick={onRedo}
+        >
+          <Redo2 size={17} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="page-ornament" aria-hidden="true">
+        <span />
+      </div>
+      <button
+        className={
+          isSaving
+            ? "save-status-seal is-saving"
+            : dirty
+              ? "save-status-seal is-unsaved"
+              : "save-status-seal is-saved"
+        }
+        type="button"
+        aria-label={
+          isSaving ? saveStatus : dirty ? "Save book edits" : saveStatus
+        }
+        disabled={!dirty || Boolean(busy)}
+        onClick={onSave}
+      >
+        <span className="save-status-mark" aria-hidden="true">
+          <Save size={14} />
+        </span>
+        <span>{saveLabel}</span>
+      </button>
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {saveStatus}
+      </span>
+    </div>
+  );
+}
+
 function EmptyState({
   busy,
   onUpload,
@@ -1716,14 +1771,16 @@ function ChapterRow({
         </span>
         <span className="chapter-copy">
           <strong>{chapter.title}</strong>
-          <small>
-            {chapter.paragraphs.filter((paragraph) => paragraph.included)
-              .length}{" "}
-            paragraphs
-          </small>
-        </span>
-        <span className="chapter-status">
-          <StatusBadge status={status} progress={progress} />
+          <span className="chapter-meta">
+            <small>
+              {chapter.paragraphs.filter((paragraph) => paragraph.included)
+                .length}{" "}
+              paragraphs
+            </small>
+            <span className="chapter-status">
+              <StatusBadge status={status} progress={progress} />
+            </span>
+          </span>
         </span>
       </button>
       <input
