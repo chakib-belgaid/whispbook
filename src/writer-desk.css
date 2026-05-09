@@ -23,6 +23,9 @@
   --purple: #4a2251;
   --purple-deep: #32163b;
   --shadow: rgba(10, 6, 3, 0.55);
+  --book-zone-bg: url("./assets/fantasy/fantasy-zone-book.png");
+  --manuscript-zone-bg: url("./assets/fantasy/fantasy-zone-manuscript.png");
+  --controls-zone-bg: url("./assets/fantasy/fantasy-zone-controls.png");
 }
 
 * { box-sizing: border-box; }
@@ -79,16 +82,6 @@ button:disabled {
     #160f0b;
 }
 
-.app-shell::before {
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  background: url("./assets/fantasy/fantasy-desk-plate-clean.png") center / cover no-repeat;
-  content: "";
-  filter: saturate(1.03) brightness(0.9) contrast(1.04);
-  opacity: 1;
-}
-
 .app-shell::after {
   position: fixed;
   inset: 0;
@@ -136,16 +129,88 @@ button:disabled {
 
 .workspace {
   display: grid;
-  grid-template-columns: 364px 600px 352px;
-  gap: 20px;
-  width: min(100vw, 1672px);
-  height: min(100svh, 941px);
-  min-height: min(100svh, 941px);
+  grid-template-columns: minmax(280px, 320px) minmax(420px, 1fr) minmax(240px, 300px);
+  gap: clamp(18px, 2.2vw, 32px);
+  width: min(calc(100vw - 24px), 1260px);
+  height: min(calc(100svh - 18px), 840px);
+  min-height: min(calc(100svh - 18px), 840px);
+  align-items: stretch;
   border: 0;
   border-radius: 0;
-  padding: clamp(70px, 8svh, 86px) 126px clamp(38px, 5svh, 54px) 190px;
+  padding: clamp(64px, 8svh, 76px) clamp(12px, 2vw, 28px) clamp(28px, 4svh, 38px);
   background: transparent;
   box-shadow: none;
+}
+
+.workspace-zone {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow:
+    0 18px 42px rgba(8, 4, 2, 0.32),
+    inset 0 0 0 1px rgba(224, 161, 75, 0.14);
+}
+
+.workspace-zone > * {
+  grid-area: 1 / 1;
+}
+
+.zone-backdrop,
+.zone-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.zone-backdrop {
+  z-index: 0;
+  background: var(--zone-bg) center / 100% 100% no-repeat;
+  filter: saturate(1.04) brightness(0.92) contrast(1.03);
+}
+
+.zone-overlay {
+  z-index: 1;
+}
+
+.zone-content {
+  position: relative;
+  z-index: 2;
+}
+
+.book-zone {
+  --zone-bg: var(--book-zone-bg);
+}
+
+.book-zone .zone-overlay {
+  background:
+    linear-gradient(90deg, rgba(4, 2, 1, 0.34), transparent 28%, transparent 72%, rgba(4, 2, 1, 0.28)),
+    linear-gradient(180deg, rgba(12, 6, 3, 0.08), rgba(12, 6, 3, 0.24));
+}
+
+.manuscript-zone {
+  --zone-bg: var(--manuscript-zone-bg);
+  border-radius: 8px;
+}
+
+.manuscript-zone .zone-overlay {
+  background:
+    linear-gradient(90deg, rgba(30, 15, 5, 0.22), transparent 18%, transparent 92%, rgba(30, 15, 5, 0.12)),
+    linear-gradient(180deg, rgba(255, 244, 207, 0.04), transparent 22%, transparent 84%, rgba(48, 24, 8, 0.08));
+}
+
+.controls-zone {
+  --zone-bg: var(--controls-zone-bg);
+  border-radius: 14px;
+}
+
+.controls-zone .zone-overlay {
+  background:
+    linear-gradient(90deg, rgba(50, 26, 8, 0.06), transparent 18%, transparent 82%, rgba(46, 23, 8, 0.12)),
+    linear-gradient(180deg, rgba(255, 232, 178, 0.1), rgba(150, 86, 26, 0.08));
 }
 
 .chapter-panel,
@@ -156,11 +221,13 @@ button:disabled {
 }
 
 .chapter-panel {
+  height: 100%;
   border-radius: 16px;
   padding: 24px 12px 14px;
+  overflow: hidden;
   color: #efd091;
-  background: linear-gradient(180deg, rgba(35, 19, 10, 0.18), rgba(17, 9, 5, 0.14));
-  box-shadow: none;
+  background: transparent;
+  box-shadow: inset 0 0 46px rgba(5, 3, 2, 0.18);
 }
 
 .sidebar-brand {
@@ -473,9 +540,11 @@ button:disabled {
 
 .manuscript-stage {
   position: relative;
-  width: calc(100% - 64px);
+  width: 100%;
+  height: 100%;
   padding: 0;
-  transform: translateX(32px);
+  overflow: visible;
+  border-radius: inherit;
   background: transparent;
   box-shadow: none;
 }
@@ -483,12 +552,12 @@ button:disabled {
 .manuscript-head {
   position: absolute;
   top: 14px;
-  right: 26px;
+  right: clamp(28px, 7%, 52px);
+  left: clamp(86px, 18%, 124px);
   z-index: 3;
   display: flex;
   justify-content: flex-end;
   margin: 0;
-  width: min(360px, calc(100% - 52px));
   gap: 10px;
   pointer-events: auto;
 }
@@ -522,7 +591,11 @@ button:disabled {
   overflow: auto;
   border: 0;
   border-radius: 0;
-  padding: clamp(42px, 5.5svh, 56px) 30px 52px;
+  padding:
+    clamp(46px, 6svh, 58px)
+    clamp(34px, 7%, 54px)
+    52px
+    clamp(86px, 19%, 124px);
   color: var(--ink);
   background: transparent;
   box-shadow: none;
@@ -690,46 +763,20 @@ button:disabled {
 .render-panel {
   position: relative;
   isolation: isolate;
+  height: 100%;
   border-radius: 10px;
-  padding: 22px 22px 18px;
+  padding: 22px clamp(18px, 7%, 28px) 18px;
   overflow: auto;
   color: var(--ink);
   border: 1px solid rgba(111, 66, 24, 0.08);
-  background:
-    radial-gradient(ellipse at 52% 20%, rgba(247, 210, 135, 0.1), transparent 62%),
-    linear-gradient(90deg, rgba(91, 48, 16, 0.06), transparent 13%, transparent 88%, rgba(88, 47, 17, 0.1)),
-    rgba(119, 69, 24, 0.02);
+  background: transparent;
   box-shadow:
     inset 0 0 30px rgba(82, 44, 16, 0.12),
     inset 0 0 0 1px rgba(255, 223, 158, 0.04);
 }
 
-.render-panel::before {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  border-radius: inherit;
-  background:
-    linear-gradient(180deg, rgba(255, 232, 178, 0.46), rgba(207, 144, 61, 0.2)),
-    url("./assets/fantasy/fantasy-parchment-texture.png") center / cover,
-    rgba(231, 176, 84, 0.16);
-  background-blend-mode: overlay, multiply, normal;
-  content: "";
-  opacity: 0.38;
-  pointer-events: none;
-}
-
-.render-panel::after {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background:
-    linear-gradient(180deg, rgba(42, 22, 7, 0.04), transparent 16%, transparent 78%, rgba(53, 29, 10, 0.08)),
-    linear-gradient(90deg, rgba(45, 24, 8, 0.08), transparent 12%, transparent 86%, rgba(45, 24, 8, 0.12));
-  content: "";
-  pointer-events: none;
-}
+.render-panel::before,
+.render-panel::after { content: none; }
 
 .chapter-list,
 .render-panel,
@@ -783,6 +830,12 @@ button:disabled {
   border-bottom: 1px solid rgba(93, 55, 22, 0.2);
   padding: 0 0 15px;
   margin-bottom: 14px;
+}
+
+.render-panel .settings-section {
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .settings-heading {
@@ -854,7 +907,7 @@ button:disabled {
 
 .generate-action {
   grid-column: 1 / -1;
-  min-height: 56px;
+  min-height: 52px;
   border: 1px solid rgba(255, 210, 111, 0.45);
   padding: 0 14px;
   color: #ffe4a8;
@@ -994,27 +1047,27 @@ button:disabled {
 
 @media (max-width: 1500px) {
   .workspace {
-    grid-template-columns: minmax(300px, 340px) minmax(500px, 1fr) minmax(318px, 340px);
-    gap: 18px;
-    padding-left: clamp(118px, 11vw, 180px);
-    padding-right: clamp(72px, 7vw, 118px);
+    grid-template-columns: minmax(280px, 320px) minmax(420px, 1fr) minmax(240px, 300px);
   }
 
   .sidebar-brand h1 { font-size: clamp(2rem, 2.6vw, 2.45rem); }
-  .render-panel { padding-inline: 18px; }
+  .render-panel { padding-inline: clamp(16px, 6%, 24px); }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1100px) {
   .app-shell { overflow: auto; }
   .workspace {
-    grid-template-columns: 300px minmax(460px, 1fr);
-    width: 100%;
+    grid-template-columns: minmax(280px, 320px) minmax(420px, 1fr);
+    width: min(calc(100vw - 20px), 980px);
     height: auto;
     min-height: 100svh;
-    padding: 76px 18px 18px;
+    padding: 76px 12px 18px;
+  }
+  .controls-zone {
+    grid-column: 1 / -1;
+    min-height: 560px;
   }
   .render-panel {
-    grid-column: 1 / -1;
     border-radius: 12px 12px 18px 18px;
     max-height: none;
   }
@@ -1023,16 +1076,47 @@ button:disabled {
 
 @media (max-width: 820px) {
   .status-strip {
-    width: 100%;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-width: none;
     justify-content: center;
     flex-wrap: wrap;
+    gap: 4px;
     border-radius: 14px;
+    padding-inline: 8px;
+    font-size: 0.72rem;
     line-height: 1.25;
   }
   .workspace {
     display: grid;
     grid-template-columns: 1fr;
-    padding: 10px;
+    width: min(calc(100vw - 20px), 560px);
+    padding: 72px 10px 10px;
+  }
+  .workspace-zone,
+  .controls-zone {
+    grid-column: auto;
+    min-height: 580px;
+  }
+  .zone-backdrop { background-size: cover; }
+  .book-zone { min-height: 720px; }
+  .manuscript-zone { min-height: 640px; }
+  .chapter-panel { height: auto; }
+  .sidebar-brand {
+    margin-left: 0;
+    gap: 10px;
+  }
+  .sidebar-brand h1 { font-size: clamp(2rem, 10vw, 2.45rem); }
+  .sidebar-brand p { font-size: 1rem; }
+  .sidebar-actions {
+    grid-template-columns: 1fr;
+  }
+  .chapter-open-button {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .chapter-open-button .status-badge {
+    justify-self: start;
   }
   .chapter-panel,
   .manuscript-stage,
@@ -1040,9 +1124,13 @@ button:disabled {
     border-radius: 14px;
   }
   .chapter-list { max-height: none; }
+  .manuscript-head {
+    right: 18px;
+    left: 18px;
+  }
   .manuscript-page {
     min-height: 420px;
-    padding: 38px 18px 42px;
+    padding: 84px 20px 42px;
   }
   .paragraph-block {
     grid-template-columns: 40px minmax(0, 1fr);
