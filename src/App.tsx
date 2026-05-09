@@ -67,6 +67,37 @@ const defaultStyleDraft: StyleOverride = {
   prompt_prefix: "",
 };
 
+const importedDocumentExtensionPattern =
+  /\.(pdf|docx|pptx|xlsx|xls|epub|html?|txt|md|csv|json|xml)$/i;
+const documentImportAccept = [
+  "application/pdf",
+  ".pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".pptx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xlsx",
+  "application/vnd.ms-excel",
+  ".xls",
+  "application/epub+zip",
+  ".epub",
+  "text/html",
+  ".html",
+  ".htm",
+  "text/plain",
+  ".txt",
+  "text/markdown",
+  ".md",
+  "text/csv",
+  ".csv",
+  "application/json",
+  ".json",
+  "application/xml",
+  "text/xml",
+  ".xml",
+].join(",");
+
 type NumericStyleKey = Extract<
   keyof StyleOverride,
   | "speed"
@@ -381,7 +412,10 @@ function App() {
     setBusy("Importing");
     setError(null);
     try {
-      const imported = await importBook(file, file.name.replace(/\.pdf$/i, ""));
+      const imported = await importBook(
+        file,
+        file.name.replace(importedDocumentExtensionPattern, ""),
+      );
       setBook(imported);
       setBooks((current) => [
         imported,
@@ -621,7 +655,7 @@ function App() {
         ref={fileInputRef}
         className="visually-hidden"
         type="file"
-        accept="application/pdf,.pdf"
+        accept={documentImportAccept}
         onChange={(event) => void handleImport(event.currentTarget.files)}
       />
 
@@ -630,10 +664,13 @@ function App() {
           className="workspace"
           aria-label="Whispbook manuscript workstation"
         >
-          <aside
-            className="chapter-panel book-cover"
-            aria-label="Book and chapters"
-          >
+          <div className="workspace-zone book-zone">
+            <div className="zone-backdrop" aria-hidden="true" />
+            <div className="zone-overlay" aria-hidden="true" />
+            <aside
+              className="chapter-panel book-cover zone-content"
+              aria-label="Book and chapters"
+            >
             <div className="sidebar-brand">
               <Feather size={38} aria-hidden="true" />
               <div>
@@ -748,12 +785,16 @@ function App() {
                 />
               ))}
             </div>
-          </aside>
+            </aside>
+          </div>
 
-          <section
-            className="editor-panel manuscript-stage"
-            aria-label="Manuscript workspace"
-          >
+          <div className="workspace-zone manuscript-zone">
+            <div className="zone-backdrop" aria-hidden="true" />
+            <div className="zone-overlay" aria-hidden="true" />
+            <section
+              className="editor-panel manuscript-stage zone-content"
+              aria-label="Manuscript workspace"
+            >
             {activeChapter && (
               <>
                 <div className="manuscript-head">
@@ -899,12 +940,16 @@ function App() {
                 </div>
               </>
             )}
-          </section>
+            </section>
+          </div>
 
-          <aside
-            className="render-panel settings-scroll"
-            aria-label="Voice timing output and style settings"
-          >
+          <div className="workspace-zone controls-zone">
+            <div className="zone-backdrop" aria-hidden="true" />
+            <div className="zone-overlay" aria-hidden="true" />
+            <aside
+              className="render-panel settings-scroll zone-content"
+              aria-label="Voice timing output and style settings"
+            >
             <section className="settings-section">
               <div className="settings-heading">
                 <Mic2 size={19} aria-hidden="true" />
@@ -1194,7 +1239,8 @@ function App() {
             )}
 
             <Downloads book={book} />
-          </aside>
+            </aside>
+          </div>
         </section>
       )}
     </main>
