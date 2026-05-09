@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.main import extract_document_text, validate_supported_document
+from app.main import extract_document_text, filename_for_upload, validate_supported_document
 
 
 def test_validate_supported_document_accepts_core_extensions():
@@ -23,6 +23,18 @@ def test_validate_supported_document_rejects_unsupported_extensions():
     assert caught.value.status_code == 400
     assert "supported document" in caught.value.detail
     assert ".pdf" in caught.value.detail
+
+
+def test_filename_for_upload_infers_missing_filename_from_content_type():
+    file = SimpleNamespace(filename=None, content_type="text/markdown")
+
+    assert filename_for_upload(file) == "document.md"
+
+
+def test_filename_for_upload_defaults_missing_metadata_to_pdf():
+    file = SimpleNamespace(filename="", content_type=None)
+
+    assert filename_for_upload(file) == "document.pdf"
 
 
 def test_extract_document_text_uses_markitdown_stream_metadata(monkeypatch):

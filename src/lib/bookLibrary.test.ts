@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   importBooksSequential,
   importTitleFromFile,
   mergeLibraryBooks,
+  orderBooksBySelectedFiles,
   planLibraryImports,
   shouldGuardBookChange,
 } from "./bookLibrary";
@@ -76,6 +77,40 @@ describe("book library helpers", () => {
 
     expect(plan.reused.map((book) => book.id)).toEqual(["book-1"]);
     expect(plan.filesToImport.map((file) => file.name)).toEqual(["new-book.md"]);
+  });
+
+  it("normalizes filenames without locale-sensitive lowercasing", () => {
+    const localeLowerCase = vi
+      .spyOn(String.prototype, "toLocaleLowerCase")
+      .mockImplementation(() => {
+        throw new Error("locale-sensitive lowercase should not be used");
+      });
+    const existing = [{ ...sampleBook("book-1", "Index"), filename: "Index.md" }];
+
+    try {
+      const plan = planLibraryImports(
+        [new File(["same"], "index.MD", { type: "text/markdown" })],
+        existing,
+      );
+
+      expect(plan.reused.map((book) => book.id)).toEqual(["book-1"]);
+      expect(plan.filesToImport).toEqual([]);
+    } finally {
+      localeLowerCase.mockRestore();
+    }
+  });
+
+  it("orders available books by the original selected file order", () => {
+    const existing = { ...sampleBook("book-1", "Existing"), filename: "existing.md" };
+    const imported = { ...sampleBook("book-2", "Fresh"), filename: "fresh.md" };
+    const selectedFiles = [
+      new File(["fresh"], "fresh.md", { type: "text/markdown" }),
+      new File(["existing"], "existing.md", { type: "text/markdown" }),
+    ];
+
+    expect(
+      orderBooksBySelectedFiles(selectedFiles, [existing, imported]).map((book) => book.id),
+    ).toEqual(["book-2", "book-1"]);
   });
 
   it("detects when unsaved edits need a guard", () => {

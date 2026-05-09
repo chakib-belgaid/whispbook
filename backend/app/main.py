@@ -154,7 +154,7 @@ def remove_book(book_id: str) -> Response:
 
 @app.post("/api/books/import", response_model=Book)
 async def import_book(file: UploadFile = File(...), title: str = Form("")) -> Book:
-    filename = file.filename or "document"
+    filename = filename_for_upload(file)
     validate_supported_document(filename)
     content = await file.read()
     text = extract_document_text(content, filename)
@@ -272,6 +272,20 @@ supported_document_mime_types = {
     ".xml": "application/xml",
 }
 supported_document_extensions = tuple(supported_document_mime_types)
+preferred_document_extensions_by_mime_type: Dict[str, str] = {}
+for document_extension, document_mime_type in supported_document_mime_types.items():
+    preferred_document_extensions_by_mime_type.setdefault(document_mime_type, document_extension)
+preferred_document_extensions_by_mime_type["text/xml"] = ".xml"
+
+
+def filename_for_upload(file: UploadFile) -> str:
+    filename = (file.filename or "").strip()
+    if Path(filename).suffix:
+        return filename
+
+    extension = preferred_document_extensions_by_mime_type.get(file.content_type or "") or ".pdf"
+    stem = Path(filename).stem or "document"
+    return f"{stem}{extension}"
 
 
 def validate_supported_document(filename: str) -> str:

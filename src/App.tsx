@@ -39,6 +39,7 @@ import {
 import {
   importBooksSequential,
   mergeLibraryBooks,
+  orderBooksBySelectedFiles,
   planLibraryImports,
   shouldGuardBookChange,
   type BookImportFailure,
@@ -476,7 +477,10 @@ function App() {
         importBook,
         (current, total) => setBusy(`Importing ${current} of ${total}`),
       );
-      const availableBooks = [...importPlan.reused, ...result.imported];
+      const availableBooks = orderBooksBySelectedFiles(files, [
+        ...importPlan.reused,
+        ...result.imported,
+      ]);
       if (availableBooks.length > 0) {
         setBooks((current) => mergeLibraryBooks(current, availableBooks));
         activateBook(availableBooks[0]);
@@ -1122,7 +1126,9 @@ function App() {
                     {activeChapter.paragraphs.map((paragraph) => (
                       <article
                         key={paragraph.id}
+                        role="button"
                         tabIndex={0}
+                        aria-label={`Select paragraph ${paragraph.index + 1}`}
                         aria-current={
                           paragraph.id === selectedParagraph?.id
                             ? "true"
@@ -1135,7 +1141,11 @@ function App() {
                         }
                         onClick={() => setSelectedParagraphId(paragraph.id)}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter") {
+                          if (event.target !== event.currentTarget) {
+                            return;
+                          }
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
                             setSelectedParagraphId(paragraph.id);
                           }
                         }}

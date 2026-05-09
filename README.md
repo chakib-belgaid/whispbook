@@ -6,7 +6,7 @@ Whispbook is a self-hosted audiobook studio for turning selectable-text document
 
 - Document import with automatic chapter and paragraph extraction.
 - Chapter selection before generation.
-- Paragraph cleanup with edit, exclude, and restore controls.
+- Paragraph cleanup with edit, exclude, and mark controls.
 - Narration presets for neutral, fantasy, sci-fi, murder mystery, and nonfiction.
 - Custom style import through JSON parameters and optional reference audio.
 - Single-paragraph preview before rendering the full book.

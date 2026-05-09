@@ -14,6 +14,7 @@ chapter_heading_pattern = re.compile(
     r"(\b|[:.\-]))|^(prologue|epilogue|part\s+([0-9ivxlcdm]+|\w+)(\b|[:.\-]))",
     re.IGNORECASE,
 )
+markdown_heading_pattern = re.compile(r"^#{1,6}\s+")
 sentence_pattern = re.compile(r"[^.!?;:]+[.!?;:]+[\"')\]]*|[^.!?;:]+$")
 max_paragraph_chars = 1200
 
@@ -79,10 +80,14 @@ def clean_paragraph(text: str) -> str:
 
 
 def is_chapter_heading(paragraph: str) -> bool:
-    compact = paragraph.strip()
+    compact = chapter_heading_title(paragraph)
     if not compact or len(compact) > 96:
         return False
     return bool(chapter_heading_pattern.search(compact))
+
+
+def chapter_heading_title(paragraph: str) -> str:
+    return markdown_heading_pattern.sub("", paragraph.strip()).strip()
 
 
 def split_chapters(paragraphs: Sequence[str]) -> List[Tuple[str, List[str]]]:
@@ -96,7 +101,7 @@ def split_chapters(paragraphs: Sequence[str]) -> List[Tuple[str, List[str]]]:
             if current_paragraphs:
                 chapters.append((current_title if found_heading else "Front Matter", current_paragraphs))
                 current_paragraphs = []
-            current_title = paragraph[:90]
+            current_title = chapter_heading_title(paragraph)[:90]
             found_heading = True
             continue
         current_paragraphs.append(paragraph)
@@ -165,4 +170,3 @@ def iter_included_paragraphs(chapter: Chapter) -> Iterable[Paragraph]:
     for paragraph in chapter.paragraphs:
         if paragraph.included and paragraph.text.strip():
             yield paragraph
-

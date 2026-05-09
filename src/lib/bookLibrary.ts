@@ -83,6 +83,27 @@ export function mergeLibraryBooks(current: readonly Book[], incoming: readonly B
   return [...incoming, ...current.filter((book) => !incomingIds.has(book.id))];
 }
 
+export function orderBooksBySelectedFiles(
+  files: readonly File[],
+  books: readonly Book[],
+): Book[] {
+  const booksByFilename = new Map(
+    books.map((book) => [normalizeFilename(book.filename), book]),
+  );
+  const ordered: Book[] = [];
+  const seenBookIds = new Set<string>();
+
+  for (const file of files) {
+    const book = booksByFilename.get(normalizeFilename(file.name));
+    if (book && !seenBookIds.has(book.id)) {
+      ordered.push(book);
+      seenBookIds.add(book.id);
+    }
+  }
+
+  return ordered;
+}
+
 export function shouldGuardBookChange(
   dirty: boolean,
   currentBookId: string | null,
@@ -102,5 +123,5 @@ function messageFromUnknown(caught: unknown): string {
 }
 
 function normalizeFilename(filename: string): string {
-  return filename.trim().toLocaleLowerCase();
+  return filename.trim().toLowerCase();
 }
