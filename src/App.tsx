@@ -999,7 +999,22 @@ function App() {
                   <div className="page-ornament" aria-hidden="true">
                     <span />
                   </div>
-                  <div className="paragraph-list manuscript-flow">
+                  <label className="markdown-heading">
+                    <span aria-hidden="true">#</span>
+                    <input
+                      aria-label="Chapter markdown heading"
+                      spellCheck={false}
+                      value={activeChapter.title}
+                      onChange={(event) => {
+                        const title = event.currentTarget.value;
+                        updateChapter(activeChapter.id, (current) => ({
+                          ...current,
+                          title,
+                        }));
+                      }}
+                    />
+                  </label>
+                  <div className="paragraph-list manuscript-flow markdown-flow">
                     {activeChapter.paragraphs.map((paragraph) => (
                       <article
                         key={paragraph.id}
@@ -1042,8 +1057,10 @@ function App() {
                         </label>
                         <div className="paragraph-copy">
                           <textarea
+                            className="markdown-paragraph-editor"
                             value={paragraph.text}
                             disabled={!paragraph.included}
+                            spellCheck={false}
                             rows={Math.max(
                               1,
                               Math.min(

@@ -816,6 +816,43 @@ summary:focus-visible,
   gap: 20px;
 }
 
+.markdown-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid rgba(113, 70, 28, 0.28);
+  padding-bottom: 12px;
+  color: #76502a;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-weight: 800;
+}
+
+.markdown-heading span {
+  font-size: 1.25rem;
+}
+
+.markdown-heading input {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  color: #2a190d;
+  background: transparent;
+  font-size: 1.08rem;
+  font-weight: 800;
+  outline: none;
+}
+
+.markdown-heading input:focus-visible {
+  outline: 2px solid rgba(112, 71, 28, 0.78);
+  outline-offset: 5px;
+}
+
+.markdown-flow {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
 .paragraph-block {
   position: relative;
   display: grid;
@@ -888,6 +925,12 @@ summary:focus-visible,
 .paragraph-block textarea:disabled {
   color: rgba(62, 44, 29, 0.48);
   text-decoration: line-through;
+}
+
+.paragraph-block .markdown-paragraph-editor {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.93rem;
+  line-height: 1.62;
 }
 
 .restore-button {
