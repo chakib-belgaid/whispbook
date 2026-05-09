@@ -35,7 +35,7 @@ from .storage import (
     public_style,
     save_book,
     save_custom_style,
-    save_original_pdf,
+    save_source_document,
     storage_root,
 )
 from .subtitles import SubtitleCue, write_vtt
@@ -154,14 +154,13 @@ def remove_book(book_id: str) -> Response:
 
 @app.post("/api/books/import", response_model=Book)
 async def import_book(file: UploadFile = File(...), title: str = Form("")) -> Book:
-    filename = file.filename or "book.pdf"
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Upload a PDF file.")
+    filename = filename_for_upload(file)
+    validate_supported_document(filename)
     content = await file.read()
-    text = extract_pdf_text(content)
+    text = extract_document_text(content, filename)
     book = build_book_from_text(title or Path(filename).stem, filename, text)
     save_book(book)
-    save_original_pdf(book.id, filename, content)
+    save_source_document(book.id, filename, content)
     return book
 
 
@@ -257,23 +256,70 @@ def load_style_or_404(style_id: str) -> VoiceStyle:
         raise HTTPException(status_code=404, detail="Style not found.") from error
 
 
-def extract_pdf_text(content: bytes) -> str:
-    try:
-        from pypdf import PdfReader
-    except ImportError as error:
-        raise HTTPException(status_code=500, detail="pypdf is required to import PDFs.") from error
+supported_document_mime_types = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
+    ".epub": "application/epub+zip",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".xml": "application/xml",
+}
+supported_document_extensions = tuple(supported_document_mime_types)
+preferred_document_extensions_by_mime_type: Dict[str, str] = {}
+for document_extension, document_mime_type in supported_document_mime_types.items():
+    preferred_document_extensions_by_mime_type.setdefault(document_mime_type, document_extension)
+preferred_document_extensions_by_mime_type["text/xml"] = ".xml"
 
-    reader = PdfReader(io.BytesIO(content))
-    page_text = []
-    for page_number, page in enumerate(reader.pages, start=1):
-        text = page.extract_text() or ""
-        if text.strip():
-            page_text.append(text)
-    extracted = "\n\n".join(page_text).strip()
+
+def filename_for_upload(file: UploadFile) -> str:
+    filename = (file.filename or "").strip()
+    if Path(filename).suffix:
+        return filename
+
+    extension = preferred_document_extensions_by_mime_type.get(file.content_type or "") or ".pdf"
+    stem = Path(filename).stem or "document"
+    return f"{stem}{extension}"
+
+
+def validate_supported_document(filename: str) -> str:
+    extension = Path(filename).suffix.lower()
+    if extension not in supported_document_mime_types:
+        allowed = ", ".join(supported_document_extensions)
+        raise HTTPException(status_code=400, detail=f"Upload a supported document file ({allowed}).")
+    return extension
+
+
+def extract_document_text(content: bytes, filename: str) -> str:
+    extension = validate_supported_document(filename)
+    try:
+        from markitdown import MarkItDown, StreamInfo
+    except ImportError as error:
+        raise HTTPException(status_code=500, detail="MarkItDown is required to import documents.") from error
+
+    try:
+        result = MarkItDown(enable_plugins=False).convert_stream(
+            io.BytesIO(content),
+            stream_info=StreamInfo(
+                filename=filename,
+                extension=extension,
+                mimetype=supported_document_mime_types[extension],
+            ),
+        )
+    except Exception as error:
+        raise HTTPException(status_code=422, detail="Could not convert the uploaded document to text.") from error
+
+    extracted = (getattr(result, "text_content", "") or "").strip()
     if not extracted:
         raise HTTPException(
             status_code=422,
-            detail="No selectable text found. OCR for scanned PDFs is not included in this version.",
+            detail="No text content found. OCR for scanned documents is not included in this version.",
         )
     return extracted
 

@@ -59,7 +59,7 @@ def delete_book(book_id: str) -> None:
     shutil.rmtree(book_dir(book_id), ignore_errors=True)
 
 
-def save_original_pdf(book_id: str, filename: str, content: bytes) -> Path:
+def save_source_document(book_id: str, filename: str, content: bytes) -> Path:
     target = book_dir(book_id) / "source"
     target.mkdir(parents=True, exist_ok=True)
     path = target / sanitize_filename(filename)

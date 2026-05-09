@@ -12,9 +12,12 @@ import {
   Loader2,
   Mic2,
   Play,
+  Redo2,
   Save,
+  Settings,
   Sparkles,
   Trash2,
+  Undo2,
   Upload,
   Wand2,
 } from "lucide-react";
@@ -33,6 +36,14 @@ import {
   saveBook,
   startGeneration,
 } from "./lib/api";
+import {
+  importBooksSequential,
+  mergeLibraryBooks,
+  orderBooksBySelectedFiles,
+  planLibraryImports,
+  shouldGuardBookChange,
+  type BookImportFailure,
+} from "./lib/bookLibrary";
 import {
   buildGenerationScript,
   defaultBackendUrlFromLocation,
@@ -67,8 +78,6 @@ const defaultStyleDraft: StyleOverride = {
   prompt_prefix: "",
 };
 
-const importedDocumentExtensionPattern =
-  /\.(pdf|docx|pptx|xlsx|xls|epub|html?|txt|md|csv|json|xml)$/i;
 const documentImportAccept = [
   "application/pdf",
   ".pdf",
@@ -108,6 +117,26 @@ type NumericStyleKey = Extract<
   | "paragraph_gap_ms"
   | "comma_pause_ms"
 >;
+
+type WorkbenchPane = "book" | "manuscript" | "render";
+type PendingBookChange =
+  | { type: "switch"; bookId: string }
+  | { type: "import"; files: File[] };
+
+interface ChapterEditSnapshot {
+  title: string;
+  selected: boolean;
+  paragraphs: Array<{
+    id: string;
+    text: string;
+    included: boolean;
+  }>;
+}
+
+interface ChapterEditHistory {
+  past: ChapterEditSnapshot[];
+  future: ChapterEditSnapshot[];
+}
 
 interface RangeSettingConfig {
   key: NumericStyleKey;
@@ -304,12 +333,18 @@ function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingBookChange, setPendingBookChange] =
+    useState<PendingBookChange | null>(null);
+  const [chapterHistory, setChapterHistory] = useState<
+    Record<string, ChapterEditHistory>
+  >({});
   const [customName, setCustomName] = useState("");
   const [customEngine, setCustomEngine] = useState<EngineName>("chatterbox");
   const [customParams, setCustomParams] = useState(
     '{"speed": 0.95, "exaggeration": 0.65, "cfg_weight": 0.35}',
   );
   const [customReference, setCustomReference] = useState<File | null>(null);
+  const [activePane, setActivePane] = useState<WorkbenchPane>("manuscript");
 
   useEffect(() => {
     void boot();
@@ -370,6 +405,18 @@ function App() {
     );
   }, [activeChapter, selectedParagraphId]);
 
+  const activeHistory = activeChapter ? chapterHistory[activeChapter.id] : null;
+  const canUndoChapter = Boolean(activeHistory?.past.length);
+  const canRedoChapter = Boolean(activeHistory?.future.length);
+
+  function activateBook(next: Book | null): void {
+    setBook(next);
+    setActiveChapterId(next?.chapters[0]?.id ?? null);
+    setSelectedParagraphId(next?.chapters[0]?.paragraphs[0]?.id ?? null);
+    setDirty(false);
+    setChapterHistory({});
+  }
+
   async function boot(): Promise<void> {
     setBusy("Loading");
     try {
@@ -385,8 +432,7 @@ function App() {
       setCapabilities(nextCapabilities);
       setBooks(nextBooks);
       const firstBook = nextBooks[0] ?? null;
-      setBook(firstBook);
-      setActiveChapterId(firstBook?.chapters[0]?.id ?? null);
+      activateBook(firstBook);
       const preferredStyle =
         nextStyles.find((style) => style.id === "fantasy") ??
         nextStyles.find((style) => style.id === "neutral") ??
@@ -404,34 +450,106 @@ function App() {
     }
   }
 
-  async function handleImport(fileList: FileList | null): Promise<void> {
-    const file = fileList?.[0];
-    if (!file) {
+  function handleImportSelection(fileList: FileList | null): void {
+    const files = Array.from(fileList ?? []);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    if (files.length === 0) {
       return;
     }
-    setBusy("Importing");
+
+    const action: PendingBookChange = { type: "import", files };
+    if (shouldGuardBookChange(dirty, book?.id ?? null)) {
+      setPendingBookChange(action);
+      return;
+    }
+
+    void runBookChange(action);
+  }
+
+  async function importSelectedBooks(files: File[]): Promise<void> {
     setError(null);
     try {
-      const imported = await importBook(
-        file,
-        file.name.replace(importedDocumentExtensionPattern, ""),
+      const importPlan = planLibraryImports(files, books);
+      const result = await importBooksSequential(
+        importPlan.filesToImport,
+        importBook,
+        (current, total) => setBusy(`Importing ${current} of ${total}`),
       );
-      setBook(imported);
-      setBooks((current) => [
-        imported,
-        ...current.filter((item) => item.id !== imported.id),
+      const availableBooks = orderBooksBySelectedFiles(files, [
+        ...importPlan.reused,
+        ...result.imported,
       ]);
-      setActiveChapterId(imported.chapters[0]?.id ?? null);
-      setSelectedParagraphId(imported.chapters[0]?.paragraphs[0]?.id ?? null);
-      setDirty(false);
+      if (availableBooks.length > 0) {
+        setBooks((current) => mergeLibraryBooks(current, availableBooks));
+        activateBook(availableBooks[0]);
+      }
+      if (result.failures.length > 0) {
+        setError(formatImportFailures(result.failures));
+      } else {
+        setError(null);
+      }
     } catch (caught) {
       setError(messageFromError(caught));
     } finally {
       setBusy(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
     }
+  }
+
+  function requestBookSwitch(bookId: string): void {
+    if (book?.id === bookId) {
+      return;
+    }
+
+    const action: PendingBookChange = { type: "switch", bookId };
+    if (shouldGuardBookChange(dirty, book?.id ?? null, bookId)) {
+      setPendingBookChange(action);
+      return;
+    }
+
+    void runBookChange(action);
+  }
+
+  async function runBookChange(action: PendingBookChange): Promise<void> {
+    if (action.type === "switch") {
+      const next = books.find((item) => item.id === action.bookId) ?? null;
+      activateBook(next);
+      return;
+    }
+
+    await importSelectedBooks(action.files);
+  }
+
+  async function savePendingBookChange(): Promise<void> {
+    if (!pendingBookChange) {
+      return;
+    }
+    const action = pendingBookChange;
+    const saved = await persistBook();
+    if (!saved) {
+      return;
+    }
+    setPendingBookChange(null);
+    await runBookChange(action);
+  }
+
+  async function discardPendingBookChange(): Promise<void> {
+    if (!pendingBookChange) {
+      return;
+    }
+    const action = pendingBookChange;
+    setPendingBookChange(null);
+    discardActiveBookEdits();
+    await runBookChange(action);
+  }
+
+  function discardActiveBookEdits(): void {
+    if (!book) {
+      setDirty(false);
+      return;
+    }
+    activateBook(books.find((item) => item.id === book.id) ?? book);
   }
 
   async function persistBook(): Promise<Book | null> {
@@ -442,10 +560,7 @@ function App() {
     try {
       const saved = await saveBook(book);
       setBook(saved);
-      setBooks((current) => [
-        saved,
-        ...current.filter((item) => item.id !== saved.id),
-      ]);
+      setBooks((current) => mergeLibraryBooks(current, [saved]));
       setDirty(false);
       setError(null);
       return saved;
@@ -531,10 +646,7 @@ function App() {
       if (nextJob.status === "done" || nextJob.status === "error") {
         const refreshed = await getBook(nextJob.book_id);
         setBook(refreshed);
-        setBooks((current) => [
-          refreshed,
-          ...current.filter((item) => item.id !== refreshed.id),
-        ]);
+        setBooks((current) => mergeLibraryBooks(current, [refreshed]));
       }
     } catch (caught) {
       setError(messageFromError(caught));
@@ -572,6 +684,58 @@ function App() {
     }
   }
 
+  async function handleStyleImport(fileList: FileList | null): Promise<void> {
+    const file = fileList?.[0];
+    if (!file) {
+      return;
+    }
+    const fileName = file.name.toLowerCase();
+    const isStyleFile =
+      fileName.endsWith(".json") || fileName.endsWith(".whisp");
+    if (!isStyleFile) {
+      setCustomReference(file);
+      setCustomName((current) =>
+        current.trim()
+          ? current
+          : file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "),
+      );
+      setError(null);
+      if (styleReferenceRef.current) {
+        styleReferenceRef.current.value = "";
+      }
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(await file.text()) as Record<string, unknown>;
+      const params =
+        payload.params &&
+        typeof payload.params === "object" &&
+        !Array.isArray(payload.params)
+          ? (payload.params as Record<string, unknown>)
+          : payload;
+      const nextEngine =
+        typeof payload.engine === "string" && isEngineName(payload.engine)
+          ? payload.engine
+          : customEngine;
+      setCustomEngine(nextEngine);
+      setCustomName(
+        typeof payload.name === "string" && payload.name.trim()
+          ? payload.name
+          : file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "),
+      );
+      setCustomParams(JSON.stringify(params, null, 2));
+      setCustomReference(null);
+      setError(null);
+    } catch (caught) {
+      setError(`Could not import style file: ${messageFromError(caught)}`);
+    } finally {
+      if (styleReferenceRef.current) {
+        styleReferenceRef.current.value = "";
+      }
+    }
+  }
+
   function updateBookTitle(title: string): void {
     updateBook((current) => ({ ...current, title }));
   }
@@ -579,13 +743,99 @@ function App() {
   function updateChapter(
     chapterId: string,
     updater: (chapter: Chapter) => Chapter,
+    options: { recordHistory?: boolean } = {},
   ): void {
+    const recordHistory = options.recordHistory ?? true;
     updateBook((current) => ({
       ...current,
-      chapters: current.chapters.map((chapter) =>
-        chapter.id === chapterId ? updater(chapter) : chapter,
-      ),
+      chapters: current.chapters.map((chapter) => {
+        if (chapter.id !== chapterId) {
+          return chapter;
+        }
+        const nextChapter = updater(chapter);
+        if (
+          recordHistory &&
+          !chapterSnapshotEquals(
+            chapterEditSnapshot(chapter),
+            chapterEditSnapshot(nextChapter),
+          )
+        ) {
+          pushChapterHistory(chapterId, chapterEditSnapshot(chapter));
+        }
+        return nextChapter;
+      }),
     }));
+  }
+
+  function undoActiveChapter(): void {
+    if (!activeChapter) {
+      return;
+    }
+    const history = chapterHistory[activeChapter.id];
+    const previous = history?.past.at(-1);
+    if (!history || !previous) {
+      return;
+    }
+
+    setChapterHistory((current) => ({
+      ...current,
+      [activeChapter.id]: {
+        past: history.past.slice(0, -1),
+        future: [chapterEditSnapshot(activeChapter), ...history.future],
+      },
+    }));
+    applyChapterSnapshot(activeChapter.id, previous);
+  }
+
+  function redoActiveChapter(): void {
+    if (!activeChapter) {
+      return;
+    }
+    const history = chapterHistory[activeChapter.id];
+    const next = history?.future[0];
+    if (!history || !next) {
+      return;
+    }
+
+    setChapterHistory((current) => ({
+      ...current,
+      [activeChapter.id]: {
+        past: [...history.past, chapterEditSnapshot(activeChapter)],
+        future: history.future.slice(1),
+      },
+    }));
+    applyChapterSnapshot(activeChapter.id, next);
+  }
+
+  function applyChapterSnapshot(
+    chapterId: string,
+    snapshot: ChapterEditSnapshot,
+  ): void {
+    updateChapter(
+      chapterId,
+      (chapter) => restoreChapterEditSnapshot(chapter, snapshot),
+      { recordHistory: false },
+    );
+  }
+
+  function pushChapterHistory(
+    chapterId: string,
+    snapshot: ChapterEditSnapshot,
+  ): void {
+    setChapterHistory((current) => {
+      const history = current[chapterId] ?? { past: [], future: [] };
+      const lastSnapshot = history.past.at(-1);
+      if (lastSnapshot && chapterSnapshotEquals(lastSnapshot, snapshot)) {
+        return current;
+      }
+      return {
+        ...current,
+        [chapterId]: {
+          past: [...history.past.slice(-79), snapshot],
+          future: [],
+        },
+      };
+    });
   }
 
   function setAllChaptersSelected(selected: boolean): void {
@@ -631,6 +881,7 @@ function App() {
 
   const selectedStyleName =
     styles.find((style) => style.id === styleDraft.style_id)?.name ?? "Fantasy";
+  const isImporting = busy?.startsWith("Importing") ?? false;
 
   return (
     <main className="app-shell">
@@ -640,6 +891,15 @@ function App() {
         <span>Renderer: {health?.ffmpeg ? "FFMPEG" : "Unavailable"}</span>
         <span aria-hidden="true">|</span>
         <span>Style: {selectedStyleName}</span>
+        <button
+          className="status-config-button"
+          type="button"
+          title="Show render settings"
+          aria-label="Show render settings"
+          onClick={() => setActivePane("render")}
+        >
+          <Settings size={16} aria-hidden="true" />
+        </button>
       </header>
 
       {error && <p className="error-banner">{error}</p>}
@@ -656,15 +916,57 @@ function App() {
         className="visually-hidden"
         type="file"
         accept={documentImportAccept}
-        onChange={(event) => void handleImport(event.currentTarget.files)}
+        multiple
+        onChange={(event) => handleImportSelection(event.currentTarget.files)}
       />
 
       {book && (
+        <>
+        <nav className="pane-switcher" aria-label="Workspace panes">
+          <button
+            className={activePane === "book" ? "pane-tab is-active" : "pane-tab"}
+            type="button"
+            aria-pressed={activePane === "book"}
+            onClick={() => setActivePane("book")}
+          >
+            <BookOpen size={17} aria-hidden="true" />
+            <span>Book</span>
+          </button>
+          <button
+            className={
+              activePane === "manuscript" ? "pane-tab is-active" : "pane-tab"
+            }
+            type="button"
+            aria-pressed={activePane === "manuscript"}
+            onClick={() => setActivePane("manuscript")}
+          >
+            <FileText size={17} aria-hidden="true" />
+            <span>Manuscript</span>
+          </button>
+          <button
+            className={
+              activePane === "render" ? "pane-tab is-active" : "pane-tab"
+            }
+            type="button"
+            aria-pressed={activePane === "render"}
+            onClick={() => setActivePane("render")}
+          >
+            <FileAudio size={17} aria-hidden="true" />
+            <span>Render</span>
+          </button>
+        </nav>
+
         <section
           className="workspace"
           aria-label="Whispbook manuscript workstation"
         >
-          <div className="workspace-zone book-zone">
+          <div
+            className={
+              activePane === "book"
+                ? "workspace-zone book-zone is-mobile-active"
+                : "workspace-zone book-zone"
+            }
+          >
             <div className="zone-backdrop" aria-hidden="true" />
             <div className="zone-overlay" aria-hidden="true" />
             <aside
@@ -688,7 +990,7 @@ function App() {
               >
                 <FileUp size={18} />
                 <span>
-                  {busy === "Importing" ? "Importing" : "Upload Book"}
+                  {isImporting ? busy : "Upload Book"}
                 </span>
               </button>
               <button
@@ -719,18 +1021,9 @@ function App() {
                 <span>Library</span>
                 <select
                   value={book.id}
-                  onChange={(event) => {
-                    const next =
-                      books.find(
-                        (item) => item.id === event.currentTarget.value,
-                      ) ?? null;
-                    setBook(next);
-                    setActiveChapterId(next?.chapters[0]?.id ?? null);
-                    setSelectedParagraphId(
-                      next?.chapters[0]?.paragraphs[0]?.id ?? null,
-                    );
-                    setDirty(false);
-                  }}
+                  onChange={(event) =>
+                    requestBookSwitch(event.currentTarget.value)
+                  }
                 >
                   {books.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -775,6 +1068,7 @@ function App() {
                         chapter.paragraphs[0]?.id ??
                         null,
                     );
+                    setActivePane("manuscript");
                   }}
                   onToggle={(selected) =>
                     updateChapter(chapter.id, (current) => ({
@@ -788,7 +1082,13 @@ function App() {
             </aside>
           </div>
 
-          <div className="workspace-zone manuscript-zone">
+          <div
+            className={
+              activePane === "manuscript"
+                ? "workspace-zone manuscript-zone is-mobile-active"
+                : "workspace-zone manuscript-zone"
+            }
+          >
             <div className="zone-backdrop" aria-hidden="true" />
             <div className="zone-overlay" aria-hidden="true" />
             <section
@@ -797,37 +1097,58 @@ function App() {
             >
             {activeChapter && (
               <>
-                <div className="manuscript-head">
-                  <label className="field compact chapter-title-field">
-                    <span>Chapter</span>
+                <div className="manuscript-page">
+                  <ManuscriptControls
+                    busy={busy}
+                    dirty={dirty}
+                    canUndo={canUndoChapter}
+                    canRedo={canRedoChapter}
+                    onUndo={undoActiveChapter}
+                    onRedo={redoActiveChapter}
+                    onSave={() => void persistBook()}
+                  />
+                  <label className="markdown-heading">
+                    <span aria-hidden="true">#</span>
                     <input
+                      aria-label="Chapter markdown heading"
+                      spellCheck={false}
                       value={activeChapter.title}
                       onChange={(event) => {
                         const title = event.currentTarget.value;
-                        updateChapter(activeChapter.id, (chapter) => ({
-                          ...chapter,
+                        updateChapter(activeChapter.id, (current) => ({
+                          ...current,
                           title,
                         }));
                       }}
                     />
                   </label>
-                  <StatusBadge status={activeChapter.status} />
-                </div>
-
-                <div className="manuscript-page">
-                  <div className="page-ornament" aria-hidden="true">
-                    <span />
-                  </div>
-                  <div className="paragraph-list manuscript-flow">
+                  <div className="paragraph-list manuscript-flow markdown-flow">
                     {activeChapter.paragraphs.map((paragraph) => (
                       <article
                         key={paragraph.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Select paragraph ${paragraph.index + 1}`}
+                        aria-current={
+                          paragraph.id === selectedParagraph?.id
+                            ? "true"
+                            : undefined
+                        }
                         className={
                           paragraph.id === selectedParagraph?.id
                             ? "paragraph-block is-selected"
                             : "paragraph-block"
                         }
                         onClick={() => setSelectedParagraphId(paragraph.id)}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) {
+                            return;
+                          }
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedParagraphId(paragraph.id);
+                          }
+                        }}
                       >
                         <label
                           className="paragraph-number"
@@ -850,8 +1171,10 @@ function App() {
                         </label>
                         <div className="paragraph-copy">
                           <textarea
+                            className="markdown-paragraph-editor"
                             value={paragraph.text}
                             disabled={!paragraph.included}
+                            spellCheck={false}
                             rows={Math.max(
                               1,
                               Math.min(
@@ -869,26 +1192,6 @@ function App() {
                               );
                             }}
                           />
-                          {paragraph.text !== paragraph.original_text && (
-                            <button
-                              className="text-button restore-button"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                updateParagraph(
-                                  activeChapter.id,
-                                  paragraph.id,
-                                  (current) => ({
-                                    ...current,
-                                    text: current.original_text,
-                                    included: true,
-                                  }),
-                                );
-                              }}
-                            >
-                              Restore original
-                            </button>
-                          )}
                         </div>
                         {paragraph.id === selectedParagraph?.id && (
                           <div
@@ -898,6 +1201,7 @@ function App() {
                             <button
                               type="button"
                               aria-label="Preview paragraph"
+                              title="Preview paragraph"
                               disabled={Boolean(busy)}
                               onClick={() => void handlePreview()}
                             >
@@ -906,6 +1210,7 @@ function App() {
                             <button
                               type="button"
                               aria-label="Remove paragraph"
+                              title="Remove paragraph"
                               onClick={() =>
                                 updateParagraph(
                                   activeChapter.id,
@@ -922,6 +1227,7 @@ function App() {
                             <button
                               type="button"
                               aria-label="Mark paragraph"
+                              title="Mark paragraph"
                               onClick={() =>
                                 updateParagraph(
                                   activeChapter.id,
@@ -943,7 +1249,13 @@ function App() {
             </section>
           </div>
 
-          <div className="workspace-zone controls-zone">
+          <div
+            className={
+              activePane === "render"
+                ? "workspace-zone controls-zone is-mobile-active"
+                : "workspace-zone controls-zone"
+            }
+          >
             <div className="zone-backdrop" aria-hidden="true" />
             <div className="zone-overlay" aria-hidden="true" />
             <aside
@@ -1136,9 +1448,9 @@ function App() {
                   ref={styleReferenceRef}
                   className="visually-hidden"
                   type="file"
-                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.json,.whisp"
                   onChange={(event) =>
-                    setCustomReference(event.currentTarget.files?.[0] ?? null)
+                    void handleStyleImport(event.currentTarget.files)
                   }
                 />
                 <button
@@ -1147,9 +1459,9 @@ function App() {
                   onClick={() => styleReferenceRef.current?.click()}
                 >
                   <Upload size={18} />
-                  <span>Add Reference Audio</span>
+                  <span>Import Style File</span>
                 </button>
-                <small>Audio file</small>
+                <small>json, .whisp, audio</small>
               </div>
               {(customReference || customName.trim()) && (
                 <details className="advanced-style" open>
@@ -1242,8 +1554,175 @@ function App() {
             </aside>
           </div>
         </section>
+        </>
+      )}
+
+      {pendingBookChange && book && (
+        <UnsavedBookDialog
+          bookTitle={book.title}
+          pendingChange={pendingBookChange}
+          busy={busy}
+          onSave={() => void savePendingBookChange()}
+          onDiscard={() => void discardPendingBookChange()}
+          onCancel={() => setPendingBookChange(null)}
+        />
       )}
     </main>
+  );
+}
+
+function UnsavedBookDialog({
+  bookTitle,
+  pendingChange,
+  busy,
+  onSave,
+  onDiscard,
+  onCancel,
+}: {
+  bookTitle: string;
+  pendingChange: PendingBookChange;
+  busy: string | null;
+  onSave: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}) {
+  const target =
+    pendingChange.type === "import"
+      ? `import ${pendingChange.files.length} ${
+          pendingChange.files.length === 1 ? "book" : "books"
+        }`
+      : "switch books";
+  const busySaving = busy === "Saving";
+
+  return (
+    <div className="save-guard-backdrop" role="presentation">
+      <section
+        className="save-guard-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="save-guard-title"
+        aria-describedby="save-guard-copy"
+      >
+        <h2 id="save-guard-title">Unsaved edits</h2>
+        <p id="save-guard-copy">
+          Save changes to <strong>{bookTitle}</strong> before you {target}?
+        </p>
+        <div className="save-guard-actions">
+          <button
+            className="primary-action"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={onSave}
+          >
+            <Save size={18} aria-hidden="true" />
+            <span>{busySaving ? "Saving" : "Save"}</span>
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={onDiscard}
+          >
+            Discard
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ManuscriptControls({
+  busy,
+  dirty,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onSave,
+}: {
+  busy: string | null;
+  dirty: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  onSave: () => void;
+}) {
+  const isSaving = busy === "Saving";
+  const saveLabel = isSaving ? "Saving" : dirty ? "Save" : "Saved";
+  const saveStatus = isSaving
+    ? "Saving book edits"
+    : dirty
+      ? "Unsaved book edits"
+      : "Book edits saved";
+
+  return (
+    <div
+      className="manuscript-controls"
+      role="group"
+      aria-label="Manuscript actions"
+    >
+      <div
+        className="page-action-tabs"
+        role="group"
+        aria-label="Chapter history"
+      >
+        <button
+          className="page-action-tab"
+          type="button"
+          aria-label="Undo chapter edit"
+          title="Undo chapter edit"
+          disabled={!canUndo || Boolean(busy)}
+          onClick={onUndo}
+        >
+          <Undo2 size={17} aria-hidden="true" />
+        </button>
+        <button
+          className="page-action-tab"
+          type="button"
+          aria-label="Redo chapter edit"
+          title="Redo chapter edit"
+          disabled={!canRedo || Boolean(busy)}
+          onClick={onRedo}
+        >
+          <Redo2 size={17} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="page-ornament" aria-hidden="true">
+        <span />
+      </div>
+      <button
+        className={
+          isSaving
+            ? "save-status-seal is-saving"
+            : dirty
+              ? "save-status-seal is-unsaved"
+              : "save-status-seal is-saved"
+        }
+        type="button"
+        aria-label={
+          isSaving ? saveStatus : dirty ? "Save book edits" : saveStatus
+        }
+        disabled={!dirty || Boolean(busy)}
+        onClick={onSave}
+      >
+        <span className="save-status-mark" aria-hidden="true">
+          <Save size={14} />
+        </span>
+        <span>{saveLabel}</span>
+      </button>
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {saveStatus}
+      </span>
+    </div>
   );
 }
 
@@ -1302,14 +1781,16 @@ function ChapterRow({
         </span>
         <span className="chapter-copy">
           <strong>{chapter.title}</strong>
-          <small>
-            {chapter.paragraphs.filter((paragraph) => paragraph.included)
-              .length}{" "}
-            paragraphs
-          </small>
-        </span>
-        <span className="chapter-status">
-          <StatusBadge status={status} progress={progress} />
+          <span className="chapter-meta">
+            <small>
+              {chapter.paragraphs.filter((paragraph) => paragraph.included)
+                .length}{" "}
+              paragraphs
+            </small>
+            <span className="chapter-status">
+              <StatusBadge status={status} progress={progress} />
+            </span>
+          </span>
         </span>
       </button>
       <input
@@ -1392,6 +1873,15 @@ function formatEngineName(engine?: EngineName): string {
 
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function isEngineName(value: string): value is EngineName {
+  return (
+    value === "kokoro" ||
+    value === "chatterbox" ||
+    value === "chatterbox_turbo" ||
+    value === "mock"
+  );
 }
 
 function toRoman(value: number): string {
@@ -1562,8 +2052,76 @@ function voiceOptionsForLanguage(
   return filtered.length > 0 ? filtered : capabilities.voices;
 }
 
+function chapterEditSnapshot(chapter: Chapter): ChapterEditSnapshot {
+  return {
+    title: chapter.title,
+    selected: chapter.selected,
+    paragraphs: chapter.paragraphs.map((paragraph) => ({
+      id: paragraph.id,
+      text: paragraph.text,
+      included: paragraph.included,
+    })),
+  };
+}
+
+function restoreChapterEditSnapshot(
+  chapter: Chapter,
+  snapshot: ChapterEditSnapshot,
+): Chapter {
+  const paragraphSnapshots = new Map(
+    snapshot.paragraphs.map((paragraph) => [paragraph.id, paragraph]),
+  );
+  return {
+    ...chapter,
+    title: snapshot.title,
+    selected: snapshot.selected,
+    paragraphs: chapter.paragraphs.map((paragraph) => {
+      const paragraphSnapshot = paragraphSnapshots.get(paragraph.id);
+      return paragraphSnapshot
+        ? {
+            ...paragraph,
+            text: paragraphSnapshot.text,
+            included: paragraphSnapshot.included,
+          }
+        : paragraph;
+    }),
+  };
+}
+
+function chapterSnapshotEquals(
+  first: ChapterEditSnapshot,
+  second: ChapterEditSnapshot,
+): boolean {
+  if (
+    first.title !== second.title ||
+    first.selected !== second.selected ||
+    first.paragraphs.length !== second.paragraphs.length
+  ) {
+    return false;
+  }
+
+  return first.paragraphs.every((paragraph, index) => {
+    const comparison = second.paragraphs[index];
+    return (
+      paragraph.id === comparison.id &&
+      paragraph.text === comparison.text &&
+      paragraph.included === comparison.included
+    );
+  });
+}
+
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatImportFailures(failures: BookImportFailure[]): string {
+  if (failures.length === 1) {
+    const [failure] = failures;
+    return `Could not import ${failure.fileName}: ${failure.message}`;
+  }
+  return `Could not import ${failures.length} files: ${failures
+    .map((failure) => `${failure.fileName} (${failure.message})`)
+    .join("; ")}`;
 }
 
 export default App;
