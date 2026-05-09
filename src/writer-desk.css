@@ -169,6 +169,70 @@ summary:focus-visible,
   transform: translateX(-50%);
 }
 
+.save-guard-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(12, 6, 3, 0.64);
+  backdrop-filter: blur(5px);
+}
+
+.save-guard-dialog {
+  display: grid;
+  width: min(460px, calc(100vw - 36px));
+  gap: 14px;
+  border: 1px solid rgba(222, 162, 70, 0.54);
+  border-radius: 14px;
+  padding: 22px;
+  color: #f5d59a;
+  background:
+    linear-gradient(180deg, rgba(45, 25, 13, 0.96), rgba(24, 12, 6, 0.98)),
+    var(--book-zone-bg) center / cover no-repeat;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 226, 153, 0.12);
+}
+
+.save-guard-dialog h2,
+.save-guard-dialog p {
+  margin: 0;
+}
+
+.save-guard-dialog h2 {
+  color: #f6c66f;
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.save-guard-dialog p {
+  color: #ecd0a0;
+  line-height: 1.45;
+}
+
+.save-guard-dialog strong {
+  color: #fff0be;
+}
+
+.save-guard-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 9px;
+}
+
+.save-guard-actions .primary-action,
+.save-guard-actions .secondary-action {
+  min-height: 42px;
+  padding-inline: 12px;
+}
+
+.save-guard-actions .secondary-action {
+  color: #f0cc85;
+  background: rgba(18, 10, 6, 0.42);
+}
+
 .workspace {
   position: relative;
   width: min(1792px, calc(100vw - 12px), calc(175svh - 14px));
@@ -1338,6 +1402,14 @@ summary:focus-visible,
 
   .status-strip span[aria-hidden="true"] {
     display: none;
+  }
+
+  .save-guard-dialog {
+    padding: 18px;
+  }
+
+  .save-guard-actions {
+    grid-template-columns: 1fr;
   }
 
   .status-config-button {

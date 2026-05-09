@@ -35,6 +35,12 @@ import {
   startGeneration,
 } from "./lib/api";
 import {
+  importBooksSequential,
+  mergeLibraryBooks,
+  shouldGuardBookChange,
+  type BookImportFailure,
+} from "./lib/bookLibrary";
+import {
   buildGenerationScript,
   defaultBackendUrlFromLocation,
   downloadTextFile,
@@ -68,8 +74,6 @@ const defaultStyleDraft: StyleOverride = {
   prompt_prefix: "",
 };
 
-const importedDocumentExtensionPattern =
-  /\.(pdf|docx|pptx|xlsx|xls|epub|html?|txt|md|csv|json|xml)$/i;
 const documentImportAccept = [
   "application/pdf",
   ".pdf",
@@ -111,6 +115,9 @@ type NumericStyleKey = Extract<
 >;
 
 type WorkbenchPane = "book" | "manuscript" | "render";
+type PendingBookChange =
+  | { type: "switch"; bookId: string }
+  | { type: "import"; files: File[] };
 
 interface RangeSettingConfig {
   key: NumericStyleKey;
@@ -307,6 +314,8 @@ function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingBookChange, setPendingBookChange] =
+    useState<PendingBookChange | null>(null);
   const [customName, setCustomName] = useState("");
   const [customEngine, setCustomEngine] = useState<EngineName>("chatterbox");
   const [customParams, setCustomParams] = useState(
@@ -374,6 +383,13 @@ function App() {
     );
   }, [activeChapter, selectedParagraphId]);
 
+  function activateBook(next: Book | null): void {
+    setBook(next);
+    setActiveChapterId(next?.chapters[0]?.id ?? null);
+    setSelectedParagraphId(next?.chapters[0]?.paragraphs[0]?.id ?? null);
+    setDirty(false);
+  }
+
   async function boot(): Promise<void> {
     setBusy("Loading");
     try {
@@ -389,8 +405,7 @@ function App() {
       setCapabilities(nextCapabilities);
       setBooks(nextBooks);
       const firstBook = nextBooks[0] ?? null;
-      setBook(firstBook);
-      setActiveChapterId(firstBook?.chapters[0]?.id ?? null);
+      activateBook(firstBook);
       const preferredStyle =
         nextStyles.find((style) => style.id === "fantasy") ??
         nextStyles.find((style) => style.id === "neutral") ??
@@ -408,34 +423,101 @@ function App() {
     }
   }
 
-  async function handleImport(fileList: FileList | null): Promise<void> {
-    const file = fileList?.[0];
-    if (!file) {
+  function handleImportSelection(fileList: FileList | null): void {
+    const files = Array.from(fileList ?? []);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    if (files.length === 0) {
       return;
     }
-    setBusy("Importing");
+
+    const action: PendingBookChange = { type: "import", files };
+    if (shouldGuardBookChange(dirty, book?.id ?? null)) {
+      setPendingBookChange(action);
+      return;
+    }
+
+    void runBookChange(action);
+  }
+
+  async function importSelectedBooks(files: File[]): Promise<void> {
     setError(null);
     try {
-      const imported = await importBook(
-        file,
-        file.name.replace(importedDocumentExtensionPattern, ""),
+      const result = await importBooksSequential(
+        files,
+        importBook,
+        (current, total) => setBusy(`Importing ${current} of ${total}`),
       );
-      setBook(imported);
-      setBooks((current) => [
-        imported,
-        ...current.filter((item) => item.id !== imported.id),
-      ]);
-      setActiveChapterId(imported.chapters[0]?.id ?? null);
-      setSelectedParagraphId(imported.chapters[0]?.paragraphs[0]?.id ?? null);
-      setDirty(false);
+      if (result.imported.length > 0) {
+        setBooks((current) => mergeLibraryBooks(current, result.imported));
+        activateBook(result.imported[0]);
+      }
+      if (result.failures.length > 0) {
+        setError(formatImportFailures(result.failures));
+      } else {
+        setError(null);
+      }
     } catch (caught) {
       setError(messageFromError(caught));
     } finally {
       setBusy(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
     }
+  }
+
+  function requestBookSwitch(bookId: string): void {
+    if (book?.id === bookId) {
+      return;
+    }
+
+    const action: PendingBookChange = { type: "switch", bookId };
+    if (shouldGuardBookChange(dirty, book?.id ?? null, bookId)) {
+      setPendingBookChange(action);
+      return;
+    }
+
+    void runBookChange(action);
+  }
+
+  async function runBookChange(action: PendingBookChange): Promise<void> {
+    if (action.type === "switch") {
+      const next = books.find((item) => item.id === action.bookId) ?? null;
+      activateBook(next);
+      return;
+    }
+
+    await importSelectedBooks(action.files);
+  }
+
+  async function savePendingBookChange(): Promise<void> {
+    if (!pendingBookChange) {
+      return;
+    }
+    const action = pendingBookChange;
+    const saved = await persistBook();
+    if (!saved) {
+      return;
+    }
+    setPendingBookChange(null);
+    await runBookChange(action);
+  }
+
+  async function discardPendingBookChange(): Promise<void> {
+    if (!pendingBookChange) {
+      return;
+    }
+    const action = pendingBookChange;
+    setPendingBookChange(null);
+    discardActiveBookEdits();
+    await runBookChange(action);
+  }
+
+  function discardActiveBookEdits(): void {
+    if (!book) {
+      setDirty(false);
+      return;
+    }
+    activateBook(books.find((item) => item.id === book.id) ?? book);
   }
 
   async function persistBook(): Promise<Book | null> {
@@ -446,10 +528,7 @@ function App() {
     try {
       const saved = await saveBook(book);
       setBook(saved);
-      setBooks((current) => [
-        saved,
-        ...current.filter((item) => item.id !== saved.id),
-      ]);
+      setBooks((current) => mergeLibraryBooks(current, [saved]));
       setDirty(false);
       setError(null);
       return saved;
@@ -535,10 +614,7 @@ function App() {
       if (nextJob.status === "done" || nextJob.status === "error") {
         const refreshed = await getBook(nextJob.book_id);
         setBook(refreshed);
-        setBooks((current) => [
-          refreshed,
-          ...current.filter((item) => item.id !== refreshed.id),
-        ]);
+        setBooks((current) => mergeLibraryBooks(current, [refreshed]));
       }
     } catch (caught) {
       setError(messageFromError(caught));
@@ -687,6 +763,7 @@ function App() {
 
   const selectedStyleName =
     styles.find((style) => style.id === styleDraft.style_id)?.name ?? "Fantasy";
+  const isImporting = busy?.startsWith("Importing") ?? false;
 
   return (
     <main className="app-shell">
@@ -721,7 +798,8 @@ function App() {
         className="visually-hidden"
         type="file"
         accept={documentImportAccept}
-        onChange={(event) => void handleImport(event.currentTarget.files)}
+        multiple
+        onChange={(event) => handleImportSelection(event.currentTarget.files)}
       />
 
       {book && (
@@ -794,7 +872,7 @@ function App() {
               >
                 <FileUp size={18} />
                 <span>
-                  {busy === "Importing" ? "Importing" : "Upload Book"}
+                  {isImporting ? busy : "Upload Book"}
                 </span>
               </button>
               <button
@@ -825,18 +903,9 @@ function App() {
                 <span>Library</span>
                 <select
                   value={book.id}
-                  onChange={(event) => {
-                    const next =
-                      books.find(
-                        (item) => item.id === event.currentTarget.value,
-                      ) ?? null;
-                    setBook(next);
-                    setActiveChapterId(next?.chapters[0]?.id ?? null);
-                    setSelectedParagraphId(
-                      next?.chapters[0]?.paragraphs[0]?.id ?? null,
-                    );
-                    setDirty(false);
-                  }}
+                  onChange={(event) =>
+                    requestBookSwitch(event.currentTarget.value)
+                  }
                 >
                   {books.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -1360,7 +1429,86 @@ function App() {
         </section>
         </>
       )}
+
+      {pendingBookChange && book && (
+        <UnsavedBookDialog
+          bookTitle={book.title}
+          pendingChange={pendingBookChange}
+          busy={busy}
+          onSave={() => void savePendingBookChange()}
+          onDiscard={() => void discardPendingBookChange()}
+          onCancel={() => setPendingBookChange(null)}
+        />
+      )}
     </main>
+  );
+}
+
+function UnsavedBookDialog({
+  bookTitle,
+  pendingChange,
+  busy,
+  onSave,
+  onDiscard,
+  onCancel,
+}: {
+  bookTitle: string;
+  pendingChange: PendingBookChange;
+  busy: string | null;
+  onSave: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}) {
+  const target =
+    pendingChange.type === "import"
+      ? `import ${pendingChange.files.length} ${
+          pendingChange.files.length === 1 ? "book" : "books"
+        }`
+      : "switch books";
+  const busySaving = busy === "Saving";
+
+  return (
+    <div className="save-guard-backdrop" role="presentation">
+      <section
+        className="save-guard-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="save-guard-title"
+        aria-describedby="save-guard-copy"
+      >
+        <h2 id="save-guard-title">Unsaved edits</h2>
+        <p id="save-guard-copy">
+          Save changes to <strong>{bookTitle}</strong> before you {target}?
+        </p>
+        <div className="save-guard-actions">
+          <button
+            className="primary-action"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={onSave}
+          >
+            <Save size={18} aria-hidden="true" />
+            <span>{busySaving ? "Saving" : "Save"}</span>
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={onDiscard}
+          >
+            Discard
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1690,6 +1838,16 @@ function voiceOptionsForLanguage(
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatImportFailures(failures: BookImportFailure[]): string {
+  if (failures.length === 1) {
+    const [failure] = failures;
+    return `Could not import ${failure.fileName}: ${failure.message}`;
+  }
+  return `Could not import ${failures.length} files: ${failures
+    .map((failure) => `${failure.fileName} (${failure.message})`)
+    .join("; ")}`;
 }
 
 export default App;
