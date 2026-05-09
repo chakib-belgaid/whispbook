@@ -732,8 +732,31 @@ summary:focus-visible,
 .editor-toolbar {
   display: flex;
   flex: 0 0 auto;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 14px 18px 0;
+}
+
+.editor-history-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-icon-action {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(117, 70, 28, 0.32);
+  border-radius: 8px;
+  color: #503116;
+  background: rgba(245, 222, 181, 0.54);
+}
+
+.editor-icon-action:hover {
+  background: rgba(245, 222, 181, 0.72);
 }
 
 .editor-save-action {
@@ -931,12 +954,6 @@ summary:focus-visible,
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.93rem;
   line-height: 1.62;
-}
-
-.restore-button {
-  justify-self: start;
-  min-height: 30px;
-  font-size: 0.78rem;
 }
 
 .selected-paragraph-toolbar {

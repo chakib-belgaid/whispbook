@@ -12,10 +12,12 @@ import {
   Loader2,
   Mic2,
   Play,
+  Redo2,
   Save,
   Settings,
   Sparkles,
   Trash2,
+  Undo2,
   Upload,
   Wand2,
 } from "lucide-react";
@@ -119,6 +121,21 @@ type WorkbenchPane = "book" | "manuscript" | "render";
 type PendingBookChange =
   | { type: "switch"; bookId: string }
   | { type: "import"; files: File[] };
+
+interface ChapterEditSnapshot {
+  title: string;
+  selected: boolean;
+  paragraphs: Array<{
+    id: string;
+    text: string;
+    included: boolean;
+  }>;
+}
+
+interface ChapterEditHistory {
+  past: ChapterEditSnapshot[];
+  future: ChapterEditSnapshot[];
+}
 
 interface RangeSettingConfig {
   key: NumericStyleKey;
@@ -317,6 +334,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [pendingBookChange, setPendingBookChange] =
     useState<PendingBookChange | null>(null);
+  const [chapterHistory, setChapterHistory] = useState<
+    Record<string, ChapterEditHistory>
+  >({});
   const [customName, setCustomName] = useState("");
   const [customEngine, setCustomEngine] = useState<EngineName>("chatterbox");
   const [customParams, setCustomParams] = useState(
@@ -384,11 +404,16 @@ function App() {
     );
   }, [activeChapter, selectedParagraphId]);
 
+  const activeHistory = activeChapter ? chapterHistory[activeChapter.id] : null;
+  const canUndoChapter = Boolean(activeHistory?.past.length);
+  const canRedoChapter = Boolean(activeHistory?.future.length);
+
   function activateBook(next: Book | null): void {
     setBook(next);
     setActiveChapterId(next?.chapters[0]?.id ?? null);
     setSelectedParagraphId(next?.chapters[0]?.paragraphs[0]?.id ?? null);
     setDirty(false);
+    setChapterHistory({});
   }
 
   async function boot(): Promise<void> {
@@ -714,13 +739,99 @@ function App() {
   function updateChapter(
     chapterId: string,
     updater: (chapter: Chapter) => Chapter,
+    options: { recordHistory?: boolean } = {},
   ): void {
+    const recordHistory = options.recordHistory ?? true;
     updateBook((current) => ({
       ...current,
-      chapters: current.chapters.map((chapter) =>
-        chapter.id === chapterId ? updater(chapter) : chapter,
-      ),
+      chapters: current.chapters.map((chapter) => {
+        if (chapter.id !== chapterId) {
+          return chapter;
+        }
+        const nextChapter = updater(chapter);
+        if (
+          recordHistory &&
+          !chapterSnapshotEquals(
+            chapterEditSnapshot(chapter),
+            chapterEditSnapshot(nextChapter),
+          )
+        ) {
+          pushChapterHistory(chapterId, chapterEditSnapshot(chapter));
+        }
+        return nextChapter;
+      }),
     }));
+  }
+
+  function undoActiveChapter(): void {
+    if (!activeChapter) {
+      return;
+    }
+    const history = chapterHistory[activeChapter.id];
+    const previous = history?.past.at(-1);
+    if (!history || !previous) {
+      return;
+    }
+
+    setChapterHistory((current) => ({
+      ...current,
+      [activeChapter.id]: {
+        past: history.past.slice(0, -1),
+        future: [chapterEditSnapshot(activeChapter), ...history.future],
+      },
+    }));
+    applyChapterSnapshot(activeChapter.id, previous);
+  }
+
+  function redoActiveChapter(): void {
+    if (!activeChapter) {
+      return;
+    }
+    const history = chapterHistory[activeChapter.id];
+    const next = history?.future[0];
+    if (!history || !next) {
+      return;
+    }
+
+    setChapterHistory((current) => ({
+      ...current,
+      [activeChapter.id]: {
+        past: [...history.past, chapterEditSnapshot(activeChapter)],
+        future: history.future.slice(1),
+      },
+    }));
+    applyChapterSnapshot(activeChapter.id, next);
+  }
+
+  function applyChapterSnapshot(
+    chapterId: string,
+    snapshot: ChapterEditSnapshot,
+  ): void {
+    updateChapter(
+      chapterId,
+      (chapter) => restoreChapterEditSnapshot(chapter, snapshot),
+      { recordHistory: false },
+    );
+  }
+
+  function pushChapterHistory(
+    chapterId: string,
+    snapshot: ChapterEditSnapshot,
+  ): void {
+    setChapterHistory((current) => {
+      const history = current[chapterId] ?? { past: [], future: [] };
+      const lastSnapshot = history.past.at(-1);
+      if (lastSnapshot && chapterSnapshotEquals(lastSnapshot, snapshot)) {
+        return current;
+      }
+      return {
+        ...current,
+        [chapterId]: {
+          past: [...history.past.slice(-79), snapshot],
+          future: [],
+        },
+      };
+    });
   }
 
   function setAllChaptersSelected(selected: boolean): void {
@@ -983,6 +1094,31 @@ function App() {
             {activeChapter && (
               <>
                 <div className="editor-toolbar" aria-label="Manuscript actions">
+                  <div
+                    className="editor-history-actions"
+                    aria-label="Chapter history"
+                  >
+                    <button
+                      className="editor-icon-action"
+                      type="button"
+                      aria-label="Undo chapter edit"
+                      title="Undo chapter edit"
+                      disabled={!canUndoChapter || Boolean(busy)}
+                      onClick={undoActiveChapter}
+                    >
+                      <Undo2 size={18} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="editor-icon-action"
+                      type="button"
+                      aria-label="Redo chapter edit"
+                      title="Redo chapter edit"
+                      disabled={!canRedoChapter || Boolean(busy)}
+                      onClick={redoActiveChapter}
+                    >
+                      <Redo2 size={18} aria-hidden="true" />
+                    </button>
+                  </div>
                   <button
                     className="secondary-action editor-save-action"
                     type="button"
@@ -1078,26 +1214,6 @@ function App() {
                               );
                             }}
                           />
-                          {paragraph.text !== paragraph.original_text && (
-                            <button
-                              className="text-button restore-button"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                updateParagraph(
-                                  activeChapter.id,
-                                  paragraph.id,
-                                  (current) => ({
-                                    ...current,
-                                    text: current.original_text,
-                                    included: true,
-                                  }),
-                                );
-                              }}
-                            >
-                              Restore original
-                            </button>
-                          )}
                         </div>
                         {paragraph.id === selectedParagraph?.id && (
                           <div
@@ -1867,6 +1983,64 @@ function voiceOptionsForLanguage(
     (voice) => voice.language === language,
   );
   return filtered.length > 0 ? filtered : capabilities.voices;
+}
+
+function chapterEditSnapshot(chapter: Chapter): ChapterEditSnapshot {
+  return {
+    title: chapter.title,
+    selected: chapter.selected,
+    paragraphs: chapter.paragraphs.map((paragraph) => ({
+      id: paragraph.id,
+      text: paragraph.text,
+      included: paragraph.included,
+    })),
+  };
+}
+
+function restoreChapterEditSnapshot(
+  chapter: Chapter,
+  snapshot: ChapterEditSnapshot,
+): Chapter {
+  const paragraphSnapshots = new Map(
+    snapshot.paragraphs.map((paragraph) => [paragraph.id, paragraph]),
+  );
+  return {
+    ...chapter,
+    title: snapshot.title,
+    selected: snapshot.selected,
+    paragraphs: chapter.paragraphs.map((paragraph) => {
+      const paragraphSnapshot = paragraphSnapshots.get(paragraph.id);
+      return paragraphSnapshot
+        ? {
+            ...paragraph,
+            text: paragraphSnapshot.text,
+            included: paragraphSnapshot.included,
+          }
+        : paragraph;
+    }),
+  };
+}
+
+function chapterSnapshotEquals(
+  first: ChapterEditSnapshot,
+  second: ChapterEditSnapshot,
+): boolean {
+  if (
+    first.title !== second.title ||
+    first.selected !== second.selected ||
+    first.paragraphs.length !== second.paragraphs.length
+  ) {
+    return false;
+  }
+
+  return first.paragraphs.every((paragraph, index) => {
+    const comparison = second.paragraphs[index];
+    return (
+      paragraph.id === comparison.id &&
+      paragraph.text === comparison.text &&
+      paragraph.included === comparison.included
+    );
+  });
 }
 
 function messageFromError(error: unknown): string {
