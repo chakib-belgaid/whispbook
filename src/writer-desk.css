@@ -241,10 +241,7 @@ summary:focus-visible,
 }
 
 .book-zone .zone-overlay {
-  border-radius: 13px;
-  background:
-    linear-gradient(90deg, rgba(5, 2, 1, 0.36), transparent 18%, transparent 76%, rgba(5, 2, 1, 0.22)),
-    linear-gradient(180deg, rgba(18, 9, 4, 0.08), rgba(18, 9, 4, 0.26));
+  background: transparent;
 }
 
 .manuscript-zone {
@@ -255,14 +252,7 @@ summary:focus-visible,
 }
 
 .manuscript-zone .zone-overlay {
-  border: 1px solid rgba(117, 69, 27, 0.14);
-  border-radius: 12px;
-  background:
-    linear-gradient(90deg, rgba(137, 73, 23, 0.09), transparent 16%, transparent 86%, rgba(137, 73, 23, 0.09)),
-    linear-gradient(180deg, rgba(255, 244, 214, 0.44), rgba(242, 211, 158, 0.22));
-  box-shadow:
-    inset 0 0 44px rgba(111, 63, 20, 0.12),
-    inset 0 0 0 1px rgba(255, 239, 202, 0.16);
+  background: transparent;
 }
 
 .controls-zone {
@@ -273,14 +263,7 @@ summary:focus-visible,
 }
 
 .controls-zone .zone-overlay {
-  border: 1px solid rgba(105, 62, 24, 0.17);
-  border-radius: 13px;
-  background:
-    linear-gradient(90deg, rgba(128, 70, 24, 0.07), transparent 15%, transparent 84%, rgba(128, 70, 24, 0.1)),
-    linear-gradient(180deg, rgba(255, 238, 196, 0.26), rgba(201, 139, 54, 0.08));
-  box-shadow:
-    inset 0 0 38px rgba(90, 48, 16, 0.12),
-    inset 0 0 0 1px rgba(255, 241, 205, 0.12);
+  background: transparent;
 }
 
 .pane-switcher {
@@ -682,43 +665,12 @@ summary:focus-visible,
   color: var(--ink);
 }
 
-.manuscript-head {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: end;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 13px 56px 4px 64px;
-}
-
-.manuscript-head .field {
-  flex: 1;
-  min-width: 0;
-}
-
-.manuscript-head .field > span:first-child {
-  color: rgba(95, 58, 24, 0.65);
-}
-
-.manuscript-head .status-badge {
-  min-height: 36px;
-  color: rgba(88, 55, 25, 0.56);
-  font-size: 0.68rem;
-}
-
-.chapter-title-field input {
-  border-color: rgba(105, 63, 24, 0.24);
-  color: #5a3318;
-  font-size: 1rem;
-  background: rgba(255, 245, 218, 0.54);
-}
-
 .manuscript-page {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px 48px 46px 58px;
+  padding: 56px 48px 46px 58px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1225,10 +1177,6 @@ summary:focus-visible,
     padding: 20px 18px 18px;
   }
 
-  .manuscript-head {
-    padding-inline: 50px;
-  }
-
   .manuscript-page {
     padding-inline: 50px 40px;
   }
@@ -1350,18 +1298,14 @@ summary:focus-visible,
   }
 
   .book-zone .zone-overlay {
-    background:
-      linear-gradient(180deg, rgba(17, 9, 4, 0.2), rgba(17, 9, 4, 0.44)),
-      rgba(18, 9, 4, 0.12);
+    background: transparent;
   }
 
   .manuscript-zone .zone-overlay,
   .controls-zone .zone-overlay {
     border: 0;
     border-radius: 0;
-    background:
-      linear-gradient(90deg, rgba(129, 72, 24, 0.1), transparent 16%, transparent 86%, rgba(129, 72, 24, 0.12)),
-      rgba(246, 222, 178, 0.18);
+    background: transparent;
   }
 
   .chapter-panel {
@@ -1458,20 +1402,8 @@ summary:focus-visible,
     min-height: 620px;
   }
 
-  .manuscript-head {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 8px;
-    padding: 18px 18px 6px;
-  }
-
-  .manuscript-head .status-badge {
-    align-self: start;
-    min-height: auto;
-  }
-
   .manuscript-page {
-    padding: 4px 18px 34px;
+    padding: 38px 18px 34px;
   }
 
   .page-ornament {

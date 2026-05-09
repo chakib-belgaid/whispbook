@@ -910,23 +910,6 @@ function App() {
             >
             {activeChapter && (
               <>
-                <div className="manuscript-head">
-                  <label className="field compact chapter-title-field">
-                    <span>Chapter</span>
-                    <input
-                      value={activeChapter.title}
-                      onChange={(event) => {
-                        const title = event.currentTarget.value;
-                        updateChapter(activeChapter.id, (chapter) => ({
-                          ...chapter,
-                          title,
-                        }));
-                      }}
-                    />
-                  </label>
-                  <StatusBadge status={activeChapter.status} />
-                </div>
-
                 <div className="manuscript-page">
                   <div className="page-ornament" aria-hidden="true">
                     <span />
