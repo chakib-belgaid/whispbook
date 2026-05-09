@@ -13,6 +13,7 @@ import {
   Mic2,
   Play,
   Save,
+  Settings,
   Sparkles,
   Trash2,
   Upload,
@@ -108,6 +109,8 @@ type NumericStyleKey = Extract<
   | "paragraph_gap_ms"
   | "comma_pause_ms"
 >;
+
+type WorkbenchPane = "book" | "manuscript" | "render";
 
 interface RangeSettingConfig {
   key: NumericStyleKey;
@@ -310,6 +313,7 @@ function App() {
     '{"speed": 0.95, "exaggeration": 0.65, "cfg_weight": 0.35}',
   );
   const [customReference, setCustomReference] = useState<File | null>(null);
+  const [activePane, setActivePane] = useState<WorkbenchPane>("manuscript");
 
   useEffect(() => {
     void boot();
@@ -572,6 +576,58 @@ function App() {
     }
   }
 
+  async function handleStyleImport(fileList: FileList | null): Promise<void> {
+    const file = fileList?.[0];
+    if (!file) {
+      return;
+    }
+    const fileName = file.name.toLowerCase();
+    const isStyleFile =
+      fileName.endsWith(".json") || fileName.endsWith(".whisp");
+    if (!isStyleFile) {
+      setCustomReference(file);
+      setCustomName((current) =>
+        current.trim()
+          ? current
+          : file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "),
+      );
+      setError(null);
+      if (styleReferenceRef.current) {
+        styleReferenceRef.current.value = "";
+      }
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(await file.text()) as Record<string, unknown>;
+      const params =
+        payload.params &&
+        typeof payload.params === "object" &&
+        !Array.isArray(payload.params)
+          ? (payload.params as Record<string, unknown>)
+          : payload;
+      const nextEngine =
+        typeof payload.engine === "string" && isEngineName(payload.engine)
+          ? payload.engine
+          : customEngine;
+      setCustomEngine(nextEngine);
+      setCustomName(
+        typeof payload.name === "string" && payload.name.trim()
+          ? payload.name
+          : file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "),
+      );
+      setCustomParams(JSON.stringify(params, null, 2));
+      setCustomReference(null);
+      setError(null);
+    } catch (caught) {
+      setError(`Could not import style file: ${messageFromError(caught)}`);
+    } finally {
+      if (styleReferenceRef.current) {
+        styleReferenceRef.current.value = "";
+      }
+    }
+  }
+
   function updateBookTitle(title: string): void {
     updateBook((current) => ({ ...current, title }));
   }
@@ -640,6 +696,15 @@ function App() {
         <span>Renderer: {health?.ffmpeg ? "FFMPEG" : "Unavailable"}</span>
         <span aria-hidden="true">|</span>
         <span>Style: {selectedStyleName}</span>
+        <button
+          className="status-config-button"
+          type="button"
+          title="Show render settings"
+          aria-label="Show render settings"
+          onClick={() => setActivePane("render")}
+        >
+          <Settings size={16} aria-hidden="true" />
+        </button>
       </header>
 
       {error && <p className="error-banner">{error}</p>}
@@ -660,11 +725,52 @@ function App() {
       />
 
       {book && (
+        <>
+        <nav className="pane-switcher" aria-label="Workspace panes">
+          <button
+            className={activePane === "book" ? "pane-tab is-active" : "pane-tab"}
+            type="button"
+            aria-pressed={activePane === "book"}
+            onClick={() => setActivePane("book")}
+          >
+            <BookOpen size={17} aria-hidden="true" />
+            <span>Book</span>
+          </button>
+          <button
+            className={
+              activePane === "manuscript" ? "pane-tab is-active" : "pane-tab"
+            }
+            type="button"
+            aria-pressed={activePane === "manuscript"}
+            onClick={() => setActivePane("manuscript")}
+          >
+            <FileText size={17} aria-hidden="true" />
+            <span>Manuscript</span>
+          </button>
+          <button
+            className={
+              activePane === "render" ? "pane-tab is-active" : "pane-tab"
+            }
+            type="button"
+            aria-pressed={activePane === "render"}
+            onClick={() => setActivePane("render")}
+          >
+            <FileAudio size={17} aria-hidden="true" />
+            <span>Render</span>
+          </button>
+        </nav>
+
         <section
           className="workspace"
           aria-label="Whispbook manuscript workstation"
         >
-          <div className="workspace-zone book-zone">
+          <div
+            className={
+              activePane === "book"
+                ? "workspace-zone book-zone is-mobile-active"
+                : "workspace-zone book-zone"
+            }
+          >
             <div className="zone-backdrop" aria-hidden="true" />
             <div className="zone-overlay" aria-hidden="true" />
             <aside
@@ -775,6 +881,7 @@ function App() {
                         chapter.paragraphs[0]?.id ??
                         null,
                     );
+                    setActivePane("manuscript");
                   }}
                   onToggle={(selected) =>
                     updateChapter(chapter.id, (current) => ({
@@ -788,7 +895,13 @@ function App() {
             </aside>
           </div>
 
-          <div className="workspace-zone manuscript-zone">
+          <div
+            className={
+              activePane === "manuscript"
+                ? "workspace-zone manuscript-zone is-mobile-active"
+                : "workspace-zone manuscript-zone"
+            }
+          >
             <div className="zone-backdrop" aria-hidden="true" />
             <div className="zone-overlay" aria-hidden="true" />
             <section
@@ -822,12 +935,23 @@ function App() {
                     {activeChapter.paragraphs.map((paragraph) => (
                       <article
                         key={paragraph.id}
+                        tabIndex={0}
+                        aria-current={
+                          paragraph.id === selectedParagraph?.id
+                            ? "true"
+                            : undefined
+                        }
                         className={
                           paragraph.id === selectedParagraph?.id
                             ? "paragraph-block is-selected"
                             : "paragraph-block"
                         }
                         onClick={() => setSelectedParagraphId(paragraph.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            setSelectedParagraphId(paragraph.id);
+                          }
+                        }}
                       >
                         <label
                           className="paragraph-number"
@@ -898,6 +1022,7 @@ function App() {
                             <button
                               type="button"
                               aria-label="Preview paragraph"
+                              title="Preview paragraph"
                               disabled={Boolean(busy)}
                               onClick={() => void handlePreview()}
                             >
@@ -906,6 +1031,7 @@ function App() {
                             <button
                               type="button"
                               aria-label="Remove paragraph"
+                              title="Remove paragraph"
                               onClick={() =>
                                 updateParagraph(
                                   activeChapter.id,
@@ -922,6 +1048,7 @@ function App() {
                             <button
                               type="button"
                               aria-label="Mark paragraph"
+                              title="Mark paragraph"
                               onClick={() =>
                                 updateParagraph(
                                   activeChapter.id,
@@ -943,7 +1070,13 @@ function App() {
             </section>
           </div>
 
-          <div className="workspace-zone controls-zone">
+          <div
+            className={
+              activePane === "render"
+                ? "workspace-zone controls-zone is-mobile-active"
+                : "workspace-zone controls-zone"
+            }
+          >
             <div className="zone-backdrop" aria-hidden="true" />
             <div className="zone-overlay" aria-hidden="true" />
             <aside
@@ -1136,9 +1269,9 @@ function App() {
                   ref={styleReferenceRef}
                   className="visually-hidden"
                   type="file"
-                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.json,.whisp"
                   onChange={(event) =>
-                    setCustomReference(event.currentTarget.files?.[0] ?? null)
+                    void handleStyleImport(event.currentTarget.files)
                   }
                 />
                 <button
@@ -1147,9 +1280,9 @@ function App() {
                   onClick={() => styleReferenceRef.current?.click()}
                 >
                   <Upload size={18} />
-                  <span>Add Reference Audio</span>
+                  <span>Import Style File</span>
                 </button>
-                <small>Audio file</small>
+                <small>json, .whisp, audio</small>
               </div>
               {(customReference || customName.trim()) && (
                 <details className="advanced-style" open>
@@ -1242,6 +1375,7 @@ function App() {
             </aside>
           </div>
         </section>
+        </>
       )}
     </main>
   );
@@ -1392,6 +1526,15 @@ function formatEngineName(engine?: EngineName): string {
 
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function isEngineName(value: string): value is EngineName {
+  return (
+    value === "kokoro" ||
+    value === "chatterbox" ||
+    value === "chatterbox_turbo" ||
+    value === "mock"
+  );
 }
 
 function toRoman(value: number): string {
