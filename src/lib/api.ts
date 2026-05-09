@@ -96,12 +96,15 @@ export async function createCustomStyle(input: {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
+    const body = await response.text();
     let detail = response.statusText;
-    try {
-      const payload = (await response.json()) as { detail?: unknown };
-      detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail);
-    } catch {
-      detail = await response.text();
+    if (body) {
+      try {
+        const payload = JSON.parse(body) as { detail?: unknown };
+        detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail);
+      } catch {
+        detail = body;
+      }
     }
     throw new Error(detail || `Request failed: ${response.status}`);
   }
