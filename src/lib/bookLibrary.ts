@@ -10,6 +10,11 @@ export interface BookImportResult {
   failures: BookImportFailure[];
 }
 
+export interface LibraryImportPlan {
+  reused: Book[];
+  filesToImport: File[];
+}
+
 export type ImportBookFn = (file: File, title: string) => Promise<Book>;
 export type ImportProgressFn = (current: number, total: number, file: File) => void;
 
@@ -18,6 +23,36 @@ export const importedDocumentExtensionPattern =
 
 export function importTitleFromFile(file: Pick<File, "name">): string {
   return file.name.replace(importedDocumentExtensionPattern, "");
+}
+
+export function planLibraryImports(
+  files: readonly File[],
+  libraryBooks: readonly Book[],
+): LibraryImportPlan {
+  const booksByFilename = new Map(
+    libraryBooks.map((book) => [normalizeFilename(book.filename), book]),
+  );
+  const reused: Book[] = [];
+  const filesToImport: File[] = [];
+  const plannedFilenames = new Set<string>();
+
+  for (const file of files) {
+    const normalized = normalizeFilename(file.name);
+    const existing = booksByFilename.get(normalized);
+    if (existing) {
+      if (!reused.some((book) => book.id === existing.id)) {
+        reused.push(existing);
+      }
+      continue;
+    }
+
+    if (!plannedFilenames.has(normalized)) {
+      filesToImport.push(file);
+      plannedFilenames.add(normalized);
+    }
+  }
+
+  return { reused, filesToImport };
 }
 
 export async function importBooksSequential(
@@ -64,4 +99,8 @@ function messageFromUnknown(caught: unknown): string {
     return caught.message;
   }
   return String(caught);
+}
+
+function normalizeFilename(filename: string): string {
+  return filename.trim().toLocaleLowerCase();
 }

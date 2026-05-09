@@ -37,6 +37,7 @@ import {
 import {
   importBooksSequential,
   mergeLibraryBooks,
+  planLibraryImports,
   shouldGuardBookChange,
   type BookImportFailure,
 } from "./lib/bookLibrary";
@@ -444,14 +445,16 @@ function App() {
   async function importSelectedBooks(files: File[]): Promise<void> {
     setError(null);
     try {
+      const importPlan = planLibraryImports(files, books);
       const result = await importBooksSequential(
-        files,
+        importPlan.filesToImport,
         importBook,
         (current, total) => setBusy(`Importing ${current} of ${total}`),
       );
-      if (result.imported.length > 0) {
-        setBooks((current) => mergeLibraryBooks(current, result.imported));
-        activateBook(result.imported[0]);
+      const availableBooks = [...importPlan.reused, ...result.imported];
+      if (availableBooks.length > 0) {
+        setBooks((current) => mergeLibraryBooks(current, availableBooks));
+        activateBook(availableBooks[0]);
       }
       if (result.failures.length > 0) {
         setError(formatImportFailures(result.failures));

@@ -3,6 +3,7 @@ import {
   importBooksSequential,
   importTitleFromFile,
   mergeLibraryBooks,
+  planLibraryImports,
   shouldGuardBookChange,
 } from "./bookLibrary";
 import type { Book } from "../types";
@@ -61,6 +62,20 @@ describe("book library helpers", () => {
       "Updated duplicate",
       "Old",
     ]);
+  });
+
+  it("reuses already parsed books by filename", () => {
+    const existing = [
+      { ...sampleBook("book-1", "Novel"), filename: "Novel.md" },
+      { ...sampleBook("book-2", "Other"), filename: "other.pdf" },
+    ];
+    const duplicate = new File(["same"], "novel.MD", { type: "text/markdown" });
+    const fresh = new File(["new"], "new-book.md", { type: "text/markdown" });
+
+    const plan = planLibraryImports([duplicate, fresh, duplicate], existing);
+
+    expect(plan.reused.map((book) => book.id)).toEqual(["book-1"]);
+    expect(plan.filesToImport.map((file) => file.name)).toEqual(["new-book.md"]);
   });
 
   it("detects when unsaved edits need a guard", () => {
