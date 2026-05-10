@@ -30,7 +30,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import {
@@ -882,34 +881,36 @@ function App() {
     setSelectedCastId((current) => (current === memberId ? "" : current));
   }
 
-  function updateAnnotationSelection(
+  function updateAnnotationSelectionFromTextarea(
     paragraphId: string,
-    event: ReactMouseEvent<HTMLElement>,
+    textarea: HTMLTextAreaElement,
   ): void {
-    const range = selectionRangeWithin(event.currentTarget);
+    const range = selectionRangeWithinTextarea(textarea);
     setSelectedAnnotationRange(range ? { paragraphId, ...range } : null);
   }
 
   function assignSelectedRangeToCast(
     chapterId: string,
     paragraphId: string,
+    castId = selectedCastId,
   ): void {
     const selection = selectedAnnotationRange;
     if (
       !selection ||
       selection.paragraphId !== paragraphId ||
       selection.start === selection.end ||
-      !selectedCastId
+      !castId
     ) {
       return;
     }
+    setSelectedCastId(castId);
     updateParagraph(chapterId, paragraphId, (current) => ({
       ...current,
       voice_ranges: assignVoiceRange(
         current.voice_ranges,
         selection.start,
         selection.end,
-        selectedCastId,
+        castId,
       ),
     }));
     setSelectedAnnotationRange(null);
@@ -944,22 +945,15 @@ function App() {
         current,
         insertion.start,
         insertion.end,
-        `${normalizedTag} `,
+        tagInsertionText(
+          current.text,
+          insertion.start,
+          insertion.end,
+          normalizedTag,
+        ),
       );
     });
     setSelectedAnnotationRange(null);
-  }
-
-  function insertCustomTagIntoParagraph(
-    chapterId: string,
-    paragraphId: string,
-  ): void {
-    const normalizedTag = normalizeTag(customTag);
-    if (!normalizedTag) {
-      return;
-    }
-    insertTagIntoParagraph(chapterId, paragraphId, normalizedTag);
-    setCustomTag("");
   }
 
   function updateCustomReferenceStartSeconds(value: string): void {
@@ -1420,11 +1414,37 @@ function App() {
                                     Math.ceil(paragraph.text.length / 88),
                                   ),
                                 )}
-                                onFocus={() =>
-                                  setSelectedParagraphId(paragraph.id)
+                                onFocus={(event) => {
+                                  setSelectedParagraphId(paragraph.id);
+                                  updateAnnotationSelectionFromTextarea(
+                                    paragraph.id,
+                                    event.currentTarget,
+                                  );
+                                }}
+                                onClick={(event) =>
+                                  updateAnnotationSelectionFromTextarea(
+                                    paragraph.id,
+                                    event.currentTarget,
+                                  )
+                                }
+                                onSelect={(event) =>
+                                  updateAnnotationSelectionFromTextarea(
+                                    paragraph.id,
+                                    event.currentTarget,
+                                  )
+                                }
+                                onKeyUp={(event) =>
+                                  updateAnnotationSelectionFromTextarea(
+                                    paragraph.id,
+                                    event.currentTarget,
+                                  )
                                 }
                                 onChange={(event) => {
                                   const text = event.currentTarget.value;
+                                  const selection =
+                                    selectionRangeWithinTextarea(
+                                      event.currentTarget,
+                                    );
                                   updateParagraph(
                                     activeChapter.id,
                                     paragraph.id,
@@ -1438,6 +1458,14 @@ function App() {
                                           current.voice_ranges,
                                         ),
                                     }),
+                                  );
+                                  setSelectedAnnotationRange(
+                                    selection
+                                      ? {
+                                          paragraphId: paragraph.id,
+                                          ...selection,
+                                        }
+                                      : null,
                                   );
                                 }}
                               />
@@ -1455,17 +1483,11 @@ function App() {
                                   selectedRange={selectedAnnotationRange}
                                   selectedCastId={selectedCastId}
                                   customTag={customTag}
-                                  onPreviewSelection={(event) =>
-                                    updateAnnotationSelection(
-                                      paragraph.id,
-                                      event,
-                                    )
-                                  }
-                                  onCastChange={setSelectedCastId}
-                                  onAssign={() =>
+                                  onAssignToCast={(castId) =>
                                     assignSelectedRangeToCast(
                                       activeChapter.id,
                                       paragraph.id,
+                                      castId,
                                     )
                                   }
                                   onRemoveRange={(rangeId) =>
@@ -1483,12 +1505,6 @@ function App() {
                                     )
                                   }
                                   onCustomTagChange={setCustomTag}
-                                  onInsertCustomTag={() =>
-                                    insertCustomTagIntoParagraph(
-                                      activeChapter.id,
-                                      paragraph.id,
-                                    )
-                                  }
                                 />
                               )}
                             </div>
@@ -1977,13 +1993,10 @@ function ParagraphInspector({
   selectedRange,
   selectedCastId,
   customTag,
-  onPreviewSelection,
-  onCastChange,
-  onAssign,
+  onAssignToCast,
   onRemoveRange,
   onInsertTag,
   onCustomTagChange,
-  onInsertCustomTag,
 }: {
   paragraph: Paragraph;
   cast: CastMember[];
@@ -1992,23 +2005,52 @@ function ParagraphInspector({
   selectedRange: TextSelectionRange | null;
   selectedCastId: string;
   customTag: string;
-  onPreviewSelection: (event: ReactMouseEvent<HTMLElement>) => void;
-  onCastChange: (castId: string) => void;
-  onAssign: () => void;
+  onAssignToCast: (castId: string) => void;
   onRemoveRange: (rangeId: string) => void;
   onInsertTag: (tag: string) => void;
   onCustomTagChange: (value: string) => void;
-  onInsertCustomTag: () => void;
 }) {
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const activeRange =
+    selectedRange?.paragraphId === paragraph.id ? selectedRange : null;
   const activeSelection =
-    selectedRange?.paragraphId === paragraph.id &&
-    selectedRange.start !== selectedRange.end
-      ? selectedRange
-      : null;
-  const selectedText = activeSelection
-    ? paragraph.text.slice(activeSelection.start, activeSelection.end)
-    : "";
+    activeRange && activeRange.start !== activeRange.end ? activeRange : null;
+  const activeCursor =
+    activeRange && activeRange.start === activeRange.end ? activeRange : null;
+  const selectedCharacterCount = activeSelection
+    ? Math.abs(activeSelection.end - activeSelection.start)
+    : 0;
+  const tagQuery = customTag
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .trim()
+    .toLowerCase();
+  const filteredTags = (
+    tagQuery ? tags.filter((tag) => tag.toLowerCase().includes(tagQuery)) : tags
+  ).slice(0, 7);
+  const normalizedCustomTag = normalizeTag(customTag);
+  const customTagMatchesKnown = tags.some(
+    (tag) => tag.toLowerCase() === normalizedCustomTag.toLowerCase(),
+  );
   const castById = new Map(cast.map((member) => [member.id, member]));
+
+  useEffect(() => {
+    if (!activeCursor) {
+      setTagPickerOpen(false);
+      onCustomTagChange("");
+    }
+  }, [activeCursor, onCustomTagChange]);
+
+  function openTagPicker(): void {
+    onCustomTagChange("");
+    setTagPickerOpen(true);
+  }
+
+  function insertTagAndClose(tag: string): void {
+    onInsertTag(tag);
+    onCustomTagChange("");
+    setTagPickerOpen(false);
+  }
 
   return (
     <section
@@ -2017,76 +2059,99 @@ function ParagraphInspector({
       }
       aria-label="Chatterbox Turbo paragraph inspector"
     >
-      <div
-        className="annotation-preview"
-        data-testid="paragraph-annotation-preview"
-        onMouseUp={enabled ? onPreviewSelection : undefined}
-      >
-        {renderAnnotatedPreview(paragraph, cast)}
-      </div>
       <p className="annotation-hint">Default narrator remains plain.</p>
       {enabled ? (
         <>
-          <div className="annotation-controls">
-            <label className="field">
-              <span>Selected text</span>
-              <input
-                readOnly
-                value={selectedText || "Select text in the preview"}
-              />
-            </label>
-            <SelectField
-              label="Character voice"
-              value={selectedCastId}
-              disabled={cast.length === 0}
-              onChange={onCastChange}
-            >
-              <option value="">Choose character</option>
-              {cast.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </SelectField>
-            <button
-              className="secondary-action"
-              type="button"
-              disabled={!activeSelection || !selectedCastId}
-              onClick={onAssign}
-            >
-              <Check size={17} />
-              <span>Assign voice</span>
-            </button>
-          </div>
-          <div className="tag-chip-row" aria-label="Paralinguistic tags">
-            {tags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className="tag-chip"
-                onClick={() => onInsertTag(tag)}
-              >
-                {tag}
-              </button>
-            ))}
-            <label className="custom-tag-field">
-              <span>Custom tag</span>
-              <input
-                value={customTag}
-                placeholder="[custom]"
-                onChange={(event) =>
-                  onCustomTagChange(event.currentTarget.value)
-                }
-              />
-            </label>
-            <button
-              type="button"
-              className="tag-chip"
-              onClick={onInsertCustomTag}
-            >
-              Insert custom
-            </button>
-          </div>
+          {activeSelection && (
+            <div className="voice-assignment-panel">
+              <div className="selection-summary">
+                <span>{selectedCharacterCount} chars selected</span>
+                <strong>Available voices</strong>
+              </div>
+              {cast.length > 0 ? (
+                <div
+                  className="voice-choice-list"
+                  aria-label="Available character voices"
+                >
+                  {cast.map((member) => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      className={
+                        member.id === selectedCastId
+                          ? "voice-choice is-selected"
+                          : "voice-choice"
+                      }
+                      data-cast-id={member.id}
+                      onClick={() => onAssignToCast(member.id)}
+                    >
+                      <span
+                        className="cast-swatch"
+                        style={{ backgroundColor: member.color }}
+                        aria-hidden="true"
+                      />
+                      <span>{member.name}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="annotation-hint">
+                  Import character voices to assign selected text.
+                </p>
+              )}
+            </div>
+          )}
+          {activeCursor && (
+            <div className="tag-insert-panel">
+              {!tagPickerOpen ? (
+                <button
+                  type="button"
+                  className="tag-insert-trigger"
+                  onClick={openTagPicker}
+                >
+                  <Sparkles size={15} />
+                  <span>Insert tag</span>
+                </button>
+              ) : (
+                <div className="tag-autocomplete">
+                  <label className="custom-tag-field">
+                    <span>Tag name</span>
+                    <input
+                      value={customTag}
+                      placeholder="[whisper] or custom"
+                      onChange={(event) =>
+                        onCustomTagChange(event.currentTarget.value)
+                      }
+                    />
+                  </label>
+                  <div
+                    className="tag-suggestion-list"
+                    aria-label="Tag suggestions"
+                  >
+                    {filteredTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className="tag-chip"
+                        onClick={() => insertTagAndClose(tag)}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                    {normalizedCustomTag && !customTagMatchesKnown && (
+                      <button
+                        type="button"
+                        className="tag-chip is-custom"
+                        onClick={() => insertTagAndClose(normalizedCustomTag)}
+                      >
+                        Use custom {normalizedCustomTag}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {paragraph.voice_ranges.length > 0 && (
             <div className="range-list" aria-label="Assigned voice ranges">
               {paragraph.voice_ranges.map((range) => {
@@ -2591,70 +2656,6 @@ function StatusBadge({
   return <em className={`status-badge status-${status}`}>{label}</em>;
 }
 
-function renderAnnotatedPreview(
-  paragraph: Paragraph,
-  cast: CastMember[],
-): ReactNode[] {
-  const castById = new Map(cast.map((member) => [member.id, member]));
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  for (const range of [...paragraph.voice_ranges].sort(
-    (first, second) => first.start - second.start,
-  )) {
-    if (range.start > cursor) {
-      nodes.push(
-        ...renderTaggedText(
-          paragraph.text.slice(cursor, range.start),
-          `plain-${cursor}`,
-        ),
-      );
-    }
-    const member = castById.get(range.cast_id);
-    const rangeText = paragraph.text.slice(range.start, range.end);
-    if (member) {
-      nodes.push(
-        <span
-          key={range.id}
-          className="voice-highlight"
-          style={
-            {
-              backgroundColor: `${member.color}33`,
-              borderBottomColor: member.color,
-            } as CSSProperties
-          }
-          title={member.name}
-        >
-          {renderTaggedText(rangeText, range.id)}
-        </span>,
-      );
-    } else {
-      nodes.push(...renderTaggedText(rangeText, range.id));
-    }
-    cursor = range.end;
-  }
-  if (cursor < paragraph.text.length) {
-    nodes.push(
-      ...renderTaggedText(paragraph.text.slice(cursor), `plain-${cursor}`),
-    );
-  }
-  return nodes.length > 0 ? nodes : [<span key="empty">&nbsp;</span>];
-}
-
-function renderTaggedText(text: string, keyPrefix: string): ReactNode[] {
-  const parts = text.split(/(\[[A-Za-z][A-Za-z0-9 _-]{0,40}\])/g);
-  return parts
-    .filter((part) => part.length > 0)
-    .map((part, index) =>
-      /^\[[A-Za-z][A-Za-z0-9 _-]{0,40}\]$/.test(part) ? (
-        <span className="tag-highlight" key={`${keyPrefix}-tag-${index}`}>
-          {part}
-        </span>
-      ) : (
-        <span key={`${keyPrefix}-text-${index}`}>{part}</span>
-      ),
-    );
-}
-
 function formatParagraphNumber(index: number): string {
   return String(index + 1).padStart(3, "0");
 }
@@ -3003,41 +3004,30 @@ function normalizeTag(value: string): string {
     : `[${trimmed.replace(/^\[|\]$/g, "")}]`;
 }
 
-function selectionRangeWithin(
-  root: HTMLElement,
-): { start: number; end: number } | null {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-    return null;
-  }
-  const range = selection.getRangeAt(0);
-  if (
-    !root.contains(range.startContainer) ||
-    !root.contains(range.endContainer)
-  ) {
-    return null;
-  }
-  const start = textOffsetWithin(root, range.startContainer, range.startOffset);
-  const end = textOffsetWithin(root, range.endContainer, range.endOffset);
-  return start < end ? { start, end } : { start: end, end: start };
+function tagInsertionText(
+  text: string,
+  start: number,
+  end: number,
+  tag: string,
+): string {
+  const previousCharacter = start > 0 ? text[start - 1] : "";
+  const nextCharacter = end < text.length ? text[end] : "";
+  const leadingSpace =
+    previousCharacter && !/\s/.test(previousCharacter) ? " " : "";
+  const trailingSpace = nextCharacter && !/\s/.test(nextCharacter) ? " " : "";
+  return `${leadingSpace}${tag}${trailingSpace}`;
 }
 
-function textOffsetWithin(
-  root: HTMLElement,
-  node: Node,
-  offset: number,
-): number {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let count = 0;
-  let current = walker.nextNode();
-  while (current) {
-    if (current === node) {
-      return count + offset;
-    }
-    count += current.textContent?.length ?? 0;
-    current = walker.nextNode();
+function selectionRangeWithinTextarea(
+  textarea: HTMLTextAreaElement,
+): { start: number; end: number } | null {
+  const { selectionStart, selectionEnd, value } = textarea;
+  if (typeof selectionStart !== "number" || typeof selectionEnd !== "number") {
+    return null;
   }
-  return count;
+  const start = Math.max(0, Math.min(selectionStart, value.length));
+  const end = Math.max(0, Math.min(selectionEnd, value.length));
+  return start <= end ? { start, end } : { start: end, end: start };
 }
 
 function assignVoiceRange(

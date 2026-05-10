@@ -380,40 +380,87 @@ describe("App review fixes", () => {
     expect(container.textContent).toContain("bob stone");
   });
 
-  it("inserts Turbo paralinguistic tags in the selected paragraph", async () => {
+  it("inserts Turbo paralinguistic tags from a cursor autocomplete", async () => {
     const { container } = await renderApp();
-    selectNarrationEngine(container, "chatterbox_turbo");
-
     await act(async () => {
-      buttonByText(container, "[laugh]").click();
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+    const editor = activeParagraphEditor(container);
+    await act(async () => {
+      placeCursorInTextarea(editor, "Existing".length);
     });
 
-    expect(activeParagraphText(container)).toContain("[laugh]");
+    await act(async () => {
+      buttonByText(container, "Insert tag").click();
+    });
+    const tagInput = controlByLabel<HTMLInputElement>(container, "Tag name");
+    await act(async () => {
+      changeInputValue(tagInput, "whi");
+    });
+    await act(async () => {
+      buttonByText(container, "[whisper]").click();
+    });
+
+    expect(activeParagraphText(container)).toBe("Existing [whisper] paragraph");
   });
 
-  it("assigns selected preview text to a cast voice and highlights only that range", async () => {
+  it("inserts custom tags from the cursor autocomplete", async () => {
     const { container } = await renderApp();
-    selectNarrationEngine(container, "chatterbox_turbo");
-    const preview = container.querySelector<HTMLElement>(
-      '[data-testid="paragraph-annotation-preview"]',
-    );
-    expect(preview).not.toBeNull();
-
-    selectTextInElement(preview!, "Existing");
-    const castSelect = controlByLabel<HTMLSelectElement>(
-      container,
-      "Character voice",
-    );
-    castSelect.value = "existing-alice";
     await act(async () => {
-      castSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      selectNarrationEngine(container, "chatterbox_turbo");
     });
+    const editor = activeParagraphEditor(container);
     await act(async () => {
-      buttonByText(container, "Assign voice").click();
+      placeCursorInTextarea(editor, "Existing".length);
     });
 
-    const highlight = container.querySelector(".voice-highlight");
-    expect(highlight?.textContent).toBe("Existing");
+    await act(async () => {
+      buttonByText(container, "Insert tag").click();
+    });
+    const tagInput = controlByLabel<HTMLInputElement>(container, "Tag name");
+    await act(async () => {
+      changeInputValue(tagInput, "hushed aside");
+    });
+    await act(async () => {
+      buttonByText(container, "Use custom [hushed aside]").click();
+    });
+
+    expect(activeParagraphText(container)).toBe(
+      "Existing [hushed aside] paragraph",
+    );
+  });
+
+  it("assigns selected original text to a cast voice from an available voice list", async () => {
+    const { container } = await renderApp();
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+    expect(
+      container.querySelector('[data-testid="paragraph-annotation-preview"]'),
+    ).toBeNull();
+
+    await act(async () => {
+      selectTextInTextarea(
+        activeParagraphEditor(container),
+        0,
+        "Existing".length,
+      );
+    });
+    const voiceList = container.querySelector<HTMLElement>(
+      '[aria-label="Available character voices"]',
+    );
+    expect(voiceList).not.toBeNull();
+
+    await act(async () => {
+      voiceList
+        ?.querySelector<HTMLButtonElement>('[data-cast-id="existing-alice"]')
+        ?.click();
+    });
+
+    expect(
+      container.querySelector('[aria-label="Available character voices"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain("Alice: Existing");
     expect(container.textContent).toContain("Default narrator remains plain");
   });
 
@@ -432,9 +479,17 @@ describe("App review fixes", () => {
 });
 
 function activeParagraphText(container: ParentNode): string | undefined {
-  return container.querySelector<HTMLTextAreaElement>(
+  return activeParagraphEditor(container).value;
+}
+
+function activeParagraphEditor(container: ParentNode): HTMLTextAreaElement {
+  const editor = container.querySelector<HTMLTextAreaElement>(
     ".markdown-paragraph-editor",
-  )?.value;
+  );
+  if (!editor) {
+    throw new Error("Could not find active paragraph editor");
+  }
+  return editor;
 }
 
 function paragraphSelectors(container: ParentNode): HTMLElement[] {
@@ -496,6 +551,23 @@ function changeInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function placeCursorInTextarea(
+  textarea: HTMLTextAreaElement,
+  offset: number,
+): void {
+  selectTextInTextarea(textarea, offset, offset);
+}
+
+function selectTextInTextarea(
+  textarea: HTMLTextAreaElement,
+  start: number,
+  end: number,
+): void {
+  textarea.focus();
+  textarea.setSelectionRange(start, end);
+  textarea.dispatchEvent(new Event("select", { bubbles: true }));
+}
+
 function selectNarrationEngine(container: ParentNode, engine: string): void {
   const engineSelect = controlByLabel<HTMLSelectElement>(
     container,
@@ -503,34 +575,6 @@ function selectNarrationEngine(container: ParentNode, engine: string): void {
   );
   engineSelect.value = engine;
   engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
-}
-
-function selectTextInElement(element: HTMLElement, text: string): void {
-  const textNode = findTextNode(element, text);
-  if (!textNode || textNode.nodeValue === null) {
-    throw new Error(`Could not find text node: ${text}`);
-  }
-  const start = textNode.nodeValue.indexOf(text);
-  const range = document.createRange();
-  range.setStart(textNode, start);
-  range.setEnd(textNode, start + text.length);
-  const selection = window.getSelection();
-  selection?.removeAllRanges();
-  selection?.addRange(range);
-  element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-}
-
-function findTextNode(node: Node, text: string): Text | null {
-  if (node.nodeType === Node.TEXT_NODE && node.nodeValue?.includes(text)) {
-    return node as Text;
-  }
-  for (const child of Array.from(node.childNodes)) {
-    const match = findTextNode(child, text);
-    if (match) {
-      return match;
-    }
-  }
-  return null;
 }
 
 function sampleBook(id: string, title: string, filename: string): Book {
