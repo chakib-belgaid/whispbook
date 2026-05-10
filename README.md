@@ -1,33 +1,92 @@
 # Whispbook
 
-[![CI](https://github.com/chakib-belgaid/whispbook/actions/workflows/ci.yml/badge.svg)](https://github.com/chakib-belgaid/whispbook/actions/workflows/ci.yml)
+[![Frontend Tests](https://github.com/chakib-belgaid/whispbook/actions/workflows/frontend-tests.yml/badge.svg)](https://github.com/chakib-belgaid/whispbook/actions/workflows/frontend-tests.yml)
+[![Backend Tests](https://github.com/chakib-belgaid/whispbook/actions/workflows/backend-tests.yml/badge.svg)](https://github.com/chakib-belgaid/whispbook/actions/workflows/backend-tests.yml)
 [![Release Validation](https://github.com/chakib-belgaid/whispbook/actions/workflows/release.yml/badge.svg)](https://github.com/chakib-belgaid/whispbook/actions/workflows/release.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Whispbook is a self-hosted audiobook studio for turning selectable-text documents into mobile-friendly audiobook files with chapter audio and subtitles.
+Whispbook is a self-hosted audiobook studio for readers, writers, and audiobook tinkerers who want to turn selectable-text documents into chaptered audio with subtitles. It combines a React writing desk, a FastAPI backend, local document conversion, and local/open-source TTS engines so you can import a manuscript, clean up the text, preview voices, generate chapters, and export a finished audiobook package.
+
+![Whispbook workbench screenshot](docs/assets/whispbook-workbench.jpg)
 
 ## Features
 
-- Document import with automatic chapter and paragraph extraction.
-- Chapter selection before generation.
-- Paragraph cleanup with edit, exclude, and mark controls.
-- Narration presets for neutral, fantasy, sci-fi, murder mystery, and nonfiction.
-- Custom style import through JSON parameters and optional reference audio.
-- Single-paragraph preview before rendering the full book.
-- Exportable generation scripts that snapshot UI edits, selected chapters, and TTS settings.
-- Background generation with per-chapter status.
-- Per-chapter `.m4a` audio plus `.vtt` and `.srt` subtitles.
-- Final `.m4b` audiobook with embedded `mov_text` subtitles, chapter metadata, and sidecar `.vtt`/`.srt`.
+- Import local documents and split them into chapters and paragraphs.
+- Review, edit, exclude, and mark paragraphs before generation.
+- Select which chapters should be included in the audiobook job.
+- Preview a single paragraph before rendering a full book.
+- Use Kokoro, Chatterbox, Chatterbox Turbo, or a local mock TTS engine.
+- Import custom narration styles from JSON and optional reference audio.
+- Export a Python generation script that snapshots current book edits and TTS settings.
+- Generate per-chapter `.m4a` files with `.vtt` and `.srt` subtitles.
+- Build a final `.m4b` audiobook with chapter metadata, embedded `mov_text` subtitles, and sidecar subtitle files.
+
+## Architecture
+
+The frontend is a Vite + React application in `src/`. It talks to the backend through `/api` and `/media`; during local development, `vite.config.ts` proxies those paths to `http://127.0.0.1:8000` unless `WHISPBOOK_API_URL` is set.
+
+The backend is a FastAPI application in `backend/app/`. It stores imported books, custom styles, previews, jobs, generated audio, and subtitle files under `storage/` by default. The backend uses MarkItDown for document conversion, ffmpeg/ffprobe for audio processing and packaging, and TTS providers from the Python environment.
 
 ## Requirements
 
 - Node.js 20 or newer.
-- Python 3.10 or newer. Chatterbox requires Python 3.10+.
+- npm 10.8.2 or compatible; the project declares `packageManager: npm@10.8.2`.
+- Python 3.10 or newer. Python 3.11+ is recommended.
 - `ffmpeg` and `ffprobe`.
-- `espeak-ng` for Kokoro.
+- `espeak-ng` for Kokoro voices.
+- Enough disk space for Hugging Face model downloads.
 
-## Model downloads
+## Local Development
 
-Whispbook loads Kokoro, Chatterbox, and Chatterbox Turbo weights from Hugging Face and stores them in the standard Hugging Face cache (`~/.cache/huggingface/hub` by default). The first preview or generation will download missing files lazily, but you can warm the cache ahead of time:
+Install frontend dependencies from the repository root:
+
+```bash
+npm install
+```
+
+Create and run the backend from another terminal:
+
+```bash
+cd backend
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Run the frontend:
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:5173`.
+
+## Docker
+
+Docker Compose starts both services and stores backend data in the repository's `storage/` directory:
+
+```bash
+docker compose up --build
+```
+
+The frontend runs on `http://localhost:5173` and the API runs on `http://localhost:8000`.
+
+## Configuration
+
+| Variable                    | Used by                | Purpose                                                                                              |
+| --------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| `WHISPBOOK_API_URL`         | Frontend dev server    | Overrides the Vite proxy target for `/api` and `/media`.                                             |
+| `WHISPBOOK_STORAGE`         | Backend                | Sets the storage root for books, styles, previews, jobs, and generated media. Defaults to `storage`. |
+| `HF_HOME`                   | Hugging Face libraries | Moves the Hugging Face model cache away from the default `~/.cache/huggingface`.                     |
+| `HF_TOKEN`                  | Hugging Face libraries | Authenticates model downloads when needed.                                                           |
+| `WHISPBOOK_ENABLE_MOCK_TTS` | Backend                | Enables the mock sine-wave TTS engine for local smoke tests when set to `1`.                         |
+
+Whispbook does not currently wire a separate model-based annotation provider. Subtitle text and exported generation scripts use the imported and edited book state from the app.
+
+## Model Downloads
+
+Whispbook loads Kokoro, Chatterbox, and Chatterbox Turbo weights from Hugging Face. Missing files download lazily on the first preview or generation, but you can warm the cache ahead of time:
 
 ```bash
 cd backend
@@ -48,7 +107,13 @@ downloads = [
     (
         "Chatterbox",
         "ResembleAI/chatterbox",
-        ["ve.safetensors", "t3_cfg.safetensors", "s3gen.safetensors", "tokenizer.json", "conds.pt"],
+        [
+            "ve.safetensors",
+            "t3_cfg.safetensors",
+            "s3gen.safetensors",
+            "tokenizer.json",
+            "conds.pt",
+        ],
     ),
     (
         "Chatterbox Turbo",
@@ -67,65 +132,48 @@ for label, repo_id, allow_patterns in downloads:
 PY
 ```
 
-Set `HF_HOME=/path/to/cache` before running the command if you want to store the models somewhere other than the default Hugging Face cache.
+Set `HF_HOME=/path/to/cache` before running the command if you want a custom cache location.
 
-The current machine has Python 3.8.10, so use Python 3.10+ or Docker for the backend.
-cd backend
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-## Local Development
-
-Install frontend dependencies:
-
-```bash
-npm install
-```
-
-Create and run the backend with Python 3.10+:
-
-```bash
-cd backend
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-Run the frontend in another terminal:
-
-```bash
-npm run dev
-```
-
-Open `http://localhost:5173`.
-
-## CI/CD
-
-Pull requests to `master` or `main` and pushes to `master` or `main` run the CI workflow with separate frontend and backend jobs. The frontend job checks formatting, lints, runs Vitest, and builds the Vite app. The backend job runs Ruff and the pytest suite through `uv` so logs point at either Python quality issues or failing tests.
-
-Release validation is intentionally separate from PR checks. It runs only for manual dispatches or version tags (`v*`) and adds a backend Docker image build on top of the normal frontend and backend validation.
-
-Run the same checks locally before publishing changes:
-
-```bash
-npm run format:check
-npm run lint
-npm test
-npm run build
-uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
-uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests
-```
-
-## Document import
+## Document Import
 
 Whispbook uses Microsoft MarkItDown to convert uploaded local documents into Markdown before chapter and paragraph extraction. Supported imports are PDF, DOCX, PPTX, XLS, XLSX, EPUB, HTML, TXT, Markdown, CSV, JSON, and XML.
 
 Imports are local uploads only. URL import, ZIP import, audio/video transcription, image OCR, Azure Document Intelligence, and MarkItDown plugins are not enabled. Scanned PDFs or image-only documents need selectable text unless MarkItDown can extract useful text without OCR.
 
-## Exported generation scripts
+## Audiobook Workflow
+
+1. Start the backend and frontend.
+2. Import one or more supported documents from the left book panel.
+3. Select the active book and review the detected chapters.
+4. Edit paragraph text, exclude paragraphs that should not be spoken, and select the chapters to include.
+5. Choose a narration source, voice, language, pacing, and advanced style settings.
+6. Use **Listen to sample** to preview the selected paragraph.
+7. Use **Create audiobook** to start background generation.
+8. Download chapter audio, subtitles, and the final audiobook package from the render panel.
+
+## Custom Styles
+
+Custom style JSON can include narration metadata and engine parameters:
+
+```json
+{
+  "description": "Slow dramatic narration",
+  "voice": "af_heart",
+  "language": "en",
+  "speed": 0.95,
+  "exaggeration": 0.7,
+  "cfg_weight": 0.35,
+  "temperature": 0.85,
+  "top_p": 0.95,
+  "paragraph_gap_ms": 650,
+  "comma_pause_ms": 180,
+  "prompt_prefix": "[deep breath] "
+}
+```
+
+For Chatterbox styles, upload a 5-10 second reference clip when you want the style to follow a known external voice or narration sample.
+
+## Exported Generation Scripts
 
 Use **Export script** in the Audiobook panel to download a Python script for the current voice settings. The script includes:
 
@@ -139,33 +187,38 @@ Run it while the backend is up:
 python whispbook-your-book-*.py
 ```
 
-Pass `--detach` to start the backend job and exit without polling, or `--api-url http://host:8000` when the backend is not on the exported default URL.
+Pass `--detach` to start the backend job and exit without polling, `--skip-save` to use the backend's current book state without patching exported edits, or `--api-url http://host:8000` when the backend is not on the exported default URL.
 
-## Docker
+## Troubleshooting
+
+- `ffmpeg and ffprobe are required.`: install ffmpeg and make sure both `ffmpeg` and `ffprobe` are on `PATH`.
+- `Kokoro is not installed.`: activate the backend environment and run `pip install -r backend/requirements.txt`; install `espeak-ng` on the host.
+- `Chatterbox needs torch and torchaudio.`: reinstall backend requirements in a Python 3.10+ environment.
+- `Chatterbox's PerTh dependency needs pkg_resources.`: reinstall backend requirements so the compatible setuptools dependency is present.
+- `MarkItDown is required to import documents.`: install backend requirements in the active backend environment.
+- `No text content found.`: upload a selectable-text document; OCR is not included in this version.
+- Frontend API requests fail in development: confirm the backend is running on `http://127.0.0.1:8000` or set `WHISPBOOK_API_URL` before running `npm run dev`.
+
+## CI/CD
+
+Pull requests and pushes to `master` or `main` run separate workflows:
+
+- **Frontend Tests** checks formatting, lints the frontend, runs Vitest, and builds the Vite app.
+- **Backend Tests** runs Ruff and the pytest suite through `uv`.
+
+Release validation is separate from PR checks. It runs only for manual dispatches or version tags (`v*`) and adds a backend Docker image build on top of the normal frontend and backend validation.
+
+Run the same checks locally before publishing changes:
 
 ```bash
-docker compose up --build
+npm run format:check
+npm run lint
+npm test
+npm run build
+uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
+uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests
 ```
 
-The frontend runs on `http://localhost:5173` and the API on `http://localhost:8000`.
+## License
 
-## Style JSON
-
-Custom style JSON can include:
-
-```json
-{
-  "description": "Slow dramatic narration",
-  "voice": "af_heart",
-  "language": "en",
-  "speed": 0.95,
-  "exaggeration": 0.7,
-  "cfg_weight": 0.35,
-  "temperature": 0.85,
-  "top_p": 0.95,
-  "paragraph_gap_ms": 650,
-  "prompt_prefix": "[deep breath] "
-}
-```
-
-For Chatterbox styles, upload a 5-10 second reference clip when you want the style to follow a known external voice or narration sample.
+Whispbook is released under the [MIT License](LICENSE).
