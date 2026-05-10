@@ -11,6 +11,7 @@ import {
   FileUp,
   Loader2,
   Mic2,
+  Pause,
   Play,
   Redo2,
   Save,
@@ -19,6 +20,8 @@ import {
   Trash2,
   Undo2,
   Upload,
+  Volume2,
+  VolumeX,
   Wand2,
 } from "lucide-react";
 import {
@@ -1550,7 +1553,7 @@ function App() {
               </div>
               {previewUrl && (
                 <div className="audio-result">
-                  <audio controls src={mediaUrl(previewUrl)} />
+                  <ThemedAudioPlayer src={mediaUrl(previewUrl)} />
                 </div>
               )}
             </section>
@@ -1672,6 +1675,118 @@ function UnsavedBookDialog({
           </button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function ThemedAudioPlayer({ src }: { src: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+  }, [src]);
+
+  function syncDuration() {
+    const audio = audioRef.current;
+    setDuration(audio ? finiteAudioTime(audio.duration) : 0);
+  }
+
+  function syncCurrentTime() {
+    const audio = audioRef.current;
+    setCurrentTime(audio ? finiteAudioTime(audio.currentTime) : 0);
+  }
+
+  async function togglePlayback() {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    if (audio.paused) {
+      try {
+        await audio.play();
+        setIsPlaying(true);
+      } catch {
+        setIsPlaying(false);
+      }
+      return;
+    }
+    audio.pause();
+    setIsPlaying(false);
+  }
+
+  function handleSeek(value: number) {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = value;
+    }
+    setCurrentTime(value);
+  }
+
+  function toggleMute() {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.muted = !audio.muted;
+    setIsMuted(audio.muted);
+  }
+
+  const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const rangeStyle = {
+    "--audio-progress": `${progress}%`,
+  } as CSSProperties;
+
+  return (
+    <div className="themed-audio-player" aria-label="Sample audio player">
+      <audio
+        className="themed-audio-element"
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onDurationChange={syncDuration}
+        onLoadedMetadata={syncDuration}
+        onTimeUpdate={syncCurrentTime}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      />
+      <button
+        className="player-icon-button"
+        type="button"
+        aria-label={isPlaying ? "Pause sample" : "Play sample"}
+        onClick={() => void togglePlayback()}
+      >
+        {isPlaying ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+      </button>
+      <span className="player-time">
+        {formatAudioTime(currentTime)} / {formatAudioTime(duration)}
+      </span>
+      <input
+        className="player-scrub"
+        type="range"
+        min="0"
+        max={Math.max(duration, 0)}
+        step="0.1"
+        value={Math.min(currentTime, duration || currentTime)}
+        aria-label="Sample playback position"
+        disabled={duration <= 0}
+        style={rangeStyle}
+        onChange={(event) => handleSeek(Number(event.currentTarget.value))}
+      />
+      <button
+        className="player-icon-button player-volume-button"
+        type="button"
+        aria-label={isMuted ? "Unmute sample" : "Mute sample"}
+        onClick={toggleMute}
+      >
+        {isMuted ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
+      </button>
     </div>
   );
 }
@@ -1971,6 +2086,17 @@ function formatEngineName(engine?: EngineName): string {
 
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function finiteAudioTime(value: number): number {
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function formatAudioTime(value: number): string {
+  const safeValue = Math.floor(finiteAudioTime(value));
+  const minutes = Math.floor(safeValue / 60);
+  const seconds = safeValue % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function readStoredStyleDraft(): StyleOverride | null {

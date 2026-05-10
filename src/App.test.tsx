@@ -44,6 +44,7 @@ describe("App review fixes", () => {
     apiMock.getTtsCapabilities.mockResolvedValue(sampleCapabilities());
     apiMock.getBooks.mockResolvedValue([sampleBook("existing", "Existing", "existing.md")]);
     apiMock.saveBook.mockImplementation(async (book: Book) => book);
+    apiMock.createPreview.mockResolvedValue(samplePreview());
     apiMock.createCustomStyle.mockResolvedValue(sampleStyle({ custom: true, id: "custom", name: "Custom" }));
   });
 
@@ -180,6 +181,23 @@ describe("App review fixes", () => {
     expect(fineTuning.open).toBe(false);
     expect(fineTuning.textContent).toContain("Reading pace");
     expect(fineTuning.textContent).toContain("Pause between paragraphs");
+  });
+
+  it("renders sample playback with themed controls instead of native browser audio chrome", async () => {
+    const { container } = await renderApp();
+
+    await act(async () => {
+      buttonByText(container, "Listen to sample").click();
+    });
+
+    const player = container.querySelector(".themed-audio-player");
+    expect(player).not.toBeNull();
+    expect(player?.querySelector('button[aria-label="Play sample"]')).not.toBeNull();
+    expect(player?.querySelector('input[aria-label="Sample playback position"]')).not.toBeNull();
+
+    const audio = player?.querySelector("audio");
+    expect(audio?.hasAttribute("controls")).toBe(false);
+    expect(audio?.getAttribute("src")).toBe("/media/sample.m4a");
   });
 
   it("passes the selected reference audio start point when saving a custom style", async () => {
@@ -374,5 +392,14 @@ function sampleCapabilities(): TTSCapabilities {
     chatterbox,
     chatterbox_turbo: { ...chatterbox, engine: "chatterbox_turbo" },
     mock: { ...chatterbox, engine: "mock" },
+  };
+}
+
+function samplePreview() {
+  return {
+    id: "sample-preview",
+    audio_url: "/media/sample.m4a",
+    vtt_url: "/media/sample.vtt",
+    duration_seconds: 12,
   };
 }
