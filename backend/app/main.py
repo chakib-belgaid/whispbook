@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import time
 import uuid
 from pathlib import Path
@@ -92,6 +93,7 @@ async def create_custom_style(
     name: str = Form(...),
     engine: str = Form("chatterbox"),
     params_json: str = Form("{}"),
+    reference_start_seconds: float = Form(0),
     reference_audio: Optional[UploadFile] = File(None),
 ) -> VoiceStyle:
     try:
@@ -106,11 +108,12 @@ async def create_custom_style(
     reference_url = None
     if reference_audio is not None:
         content = await reference_audio.read()
-        target_dir = storage_root / "styles" / style_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-        extension = Path(reference_audio.filename or "reference.wav").suffix or ".wav"
-        path = target_dir / f"reference{extension}"
-        path.write_bytes(content)
+        path = save_reference_audio(
+            style_id,
+            reference_audio.filename,
+            content,
+            reference_start_seconds=reference_start_seconds,
+        )
         reference_path = str(path)
         reference_url = file_url(path)
 
@@ -134,6 +137,48 @@ async def create_custom_style(
         custom=True,
     )
     return save_custom_style(style)
+
+
+def save_reference_audio(
+    style_id: str,
+    filename: str | None,
+    content: bytes,
+    *,
+    reference_start_seconds: float = 0,
+) -> Path:
+    start_seconds = normalize_reference_start_seconds(reference_start_seconds)
+    target_dir = storage_root / "styles" / style_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    extension = Path(filename or "reference.wav").suffix or ".wav"
+    path = target_dir / f"reference{extension}"
+    if start_seconds == 0:
+        path.write_bytes(content)
+        return path
+
+    source_path = target_dir / f"reference-source{extension}"
+    source_path.write_bytes(content)
+    try:
+        ffmpeg.run_ffmpeg(
+            [
+                "-ss",
+                f"{start_seconds:.3f}",
+                "-i",
+                str(source_path),
+                "-vn",
+                str(path),
+            ]
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=422, detail=f"Could not trim reference audio: {error}") from error
+    finally:
+        source_path.unlink(missing_ok=True)
+    return path
+
+
+def normalize_reference_start_seconds(value: float) -> float:
+    if not math.isfinite(value):
+        raise HTTPException(status_code=400, detail="reference_start_seconds must be finite.")
+    return max(0.0, value)
 
 
 @app.get("/api/books", response_model=List[Book])
