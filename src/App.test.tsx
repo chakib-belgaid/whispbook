@@ -106,12 +106,12 @@ describe("App review fixes", () => {
     );
   });
 
-  it("updates Chatterbox Turbo voice and prompt controls without reusing a stale event target", async () => {
+  it("updates Chatterbox Turbo voice controls without reusing a stale event target", async () => {
     const { container } = await renderApp();
 
     const engineSelect = controlByLabel<HTMLSelectElement>(
       container,
-      "Narration source",
+      "TTS model",
     );
     engineSelect.value = "chatterbox_turbo";
     await act(async () => {
@@ -127,17 +127,19 @@ describe("App review fixes", () => {
       voiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    const promptPrefix = controlByLabel<HTMLTextAreaElement>(
-      container,
-      "Narration guidance",
-    );
-    promptPrefix.value = "[hushed] ";
-    await act(async () => {
-      promptPrefix.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
     expect(voiceSelect.value).toBe("reference");
-    expect(promptPrefix.value).toBe("[hushed] ");
+    expect(container.textContent).not.toContain("Narration guidance");
+  });
+
+  it("defaults fresh audiobook settings to Chatterbox Turbo", async () => {
+    const { container } = await renderApp();
+
+    expect(controlByLabel<HTMLSelectElement>(container, "TTS model").value).toBe(
+      "chatterbox_turbo",
+    );
+    expect(currentTtsModelLayout(container).dataset.engine).toBe(
+      "chatterbox_turbo",
+    );
   });
 
   it("restores the last used voice configuration instead of booting into a preset", async () => {
@@ -159,15 +161,12 @@ describe("App review fixes", () => {
     const { container } = await renderApp();
 
     expect(
-      controlByLabel<HTMLSelectElement>(container, "Narration source").value,
+      controlByLabel<HTMLSelectElement>(container, "TTS model").value,
     ).toBe("chatterbox_turbo");
     expect(controlByLabel<HTMLSelectElement>(container, "Narrator").value).toBe(
       "reference",
     );
-    expect(
-      controlByLabel<HTMLTextAreaElement>(container, "Narration guidance")
-        .value,
-    ).toBe("[calm] ");
+    expect(container.textContent).not.toContain("Narration guidance");
   });
 
   it("uses clear audiobook settings labels instead of fantasy config terms", async () => {
@@ -180,6 +179,7 @@ describe("App review fixes", () => {
       container.querySelector('[aria-label="Open audiobook settings"]'),
     ).not.toBeNull();
     expect(container.textContent).toContain("Audiobook");
+    expect(container.textContent).toContain("TTS model");
     expect(container.textContent).toContain("Voice presets");
     expect(container.textContent).toContain("Current settings");
     expect(container.textContent).toContain("Voice fine-tuning");
@@ -190,6 +190,40 @@ describe("App review fixes", () => {
     expect(container.textContent).not.toContain("Ritual Runes");
     expect(container.textContent).not.toContain("Opening incantation");
     expect(container.textContent).not.toContain("voice charm");
+  });
+
+  it("renders a specific settings layout for each TTS model", async () => {
+    const { container } = await renderApp();
+
+    let layout = currentTtsModelLayout(container);
+    expect(layout.dataset.engine).toBe("chatterbox_turbo");
+    expect(layout.textContent).toContain("Turbo narrator");
+    expect(layout.textContent).not.toContain("Narration guidance");
+    expect(layout.textContent).toContain("Voice variation");
+    expect(layout.textContent).toContain("Import character voices");
+    expect(layout.textContent).not.toContain("Language");
+
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox");
+    });
+    layout = currentTtsModelLayout(container);
+    expect(layout.dataset.engine).toBe("chatterbox");
+    expect(layout.textContent).toContain("Chatterbox narrator");
+    expect(layout.textContent).toContain("Language");
+    expect(layout.textContent).toContain("Expressiveness");
+    expect(layout.textContent).toContain("Voice consistency");
+    expect(layout.textContent).not.toContain("Narration guidance");
+    expect(layout.textContent).not.toContain("Import character voices");
+
+    await act(async () => {
+      selectNarrationEngine(container, "kokoro");
+    });
+    layout = currentTtsModelLayout(container);
+    expect(layout.dataset.engine).toBe("kokoro");
+    expect(layout.textContent).toContain("Kokoro narrator");
+    expect(layout.textContent).toContain("Reading pace");
+    expect(layout.textContent).toContain("Comma pause");
+    expect(layout.textContent).not.toContain("Narration guidance");
   });
 
   it("keeps built-in voice presets selectable and allows returning to current settings", async () => {
@@ -235,13 +269,16 @@ describe("App review fixes", () => {
 
     const fineTuning = detailsBySummary(container, "Voice fine-tuning");
     expect(fineTuning.open).toBe(false);
-    expect(fineTuning.textContent).toContain("Reading pace");
+    expect(fineTuning.textContent).toContain("Voice variation");
     expect(fineTuning.textContent).toContain("Pause between paragraphs");
   });
 
   it("hides comma pause settings for Chatterbox engines", async () => {
     const { container } = await renderApp();
 
+    await act(async () => {
+      selectNarrationEngine(container, "kokoro");
+    });
     expect(container.textContent).toContain("Comma pause");
 
     await act(async () => {
@@ -585,12 +622,19 @@ function selectTextInTextarea(
 }
 
 function selectNarrationEngine(container: ParentNode, engine: string): void {
-  const engineSelect = controlByLabel<HTMLSelectElement>(
-    container,
-    "Narration source",
-  );
+  const engineSelect = controlByLabel<HTMLSelectElement>(container, "TTS model");
   engineSelect.value = engine;
   engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function currentTtsModelLayout(container: ParentNode): HTMLElement {
+  const layout = container.querySelector<HTMLElement>(
+    '[data-testid="tts-model-layout"]',
+  );
+  if (!layout) {
+    throw new Error("Could not find TTS model layout");
+  }
+  return layout;
 }
 
 function sampleBook(id: string, title: string, filename: string): Book {

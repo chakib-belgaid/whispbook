@@ -198,7 +198,7 @@ class TTSManager:
 
     def synthesize(self, text: str, style: VoiceStyle, output_path: Path) -> None:
         units = split_text_for_tts(
-            style.prompt_prefix + text,
+            text_for_style(style, text),
             comma_pause_ms=punctuation_pause_ms_for_engine(style),
         )
         if len(units) == 1 and not units[0].is_pause:
@@ -249,6 +249,12 @@ def punctuation_pause_ms_for_engine(style: VoiceStyle) -> int:
     if style.engine in {"chatterbox", "chatterbox_turbo"}:
         return 0
     return style.comma_pause_ms
+
+
+def text_for_style(style: VoiceStyle, text: str) -> str:
+    if style.engine in {"chatterbox", "chatterbox_turbo"}:
+        return text
+    return style.prompt_prefix + text
 
 
 def split_paused_paragraph(paragraph: str, comma_pause_ms: int) -> List[TTSUnit]:

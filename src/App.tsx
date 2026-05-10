@@ -10,7 +10,6 @@ import {
   FileText,
   FileUp,
   Loader2,
-  Mic2,
   Pause,
   Play,
   Redo2,
@@ -75,11 +74,40 @@ import type {
   VoiceRange,
 } from "./types";
 
+const defaultTtsModel: EngineName = "chatterbox_turbo";
+
+const ttsModelOptions: Array<{ value: EngineName; label: string }> = [
+  { value: "chatterbox_turbo", label: "Chatterbox Turbo" },
+  { value: "chatterbox", label: "Chatterbox" },
+  { value: "kokoro", label: "Kokoro" },
+];
+
+const ttsModelLayoutByEngine: Partial<
+  Record<EngineName, { title: string; className: string }>
+> = {
+  chatterbox_turbo: {
+    title: "Turbo narrator",
+    className: "model-settings-section--turbo",
+  },
+  chatterbox: {
+    title: "Chatterbox narrator",
+    className: "model-settings-section--chatterbox",
+  },
+  kokoro: {
+    title: "Kokoro narrator",
+    className: "model-settings-section--kokoro",
+  },
+  mock: {
+    title: "Mock narrator",
+    className: "model-settings-section--mock",
+  },
+};
+
 const defaultStyleDraft: StyleOverride = {
   style_id: "neutral",
-  engine: "kokoro",
-  voice: "af_heart",
-  language: "a",
+  engine: defaultTtsModel,
+  voice: "reference",
+  language: "en",
   speed: 1,
   exaggeration: 0.5,
   cfg_weight: 0.5,
@@ -174,7 +202,6 @@ interface RangeSettingConfig {
 
 interface EngineSettingsConfig {
   language: boolean;
-  promptPrefix: boolean;
   ranges: RangeSettingConfig[];
 }
 
@@ -188,7 +215,6 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
   {
     kokoro: {
       language: true,
-      promptPrefix: false,
       ranges: [
         {
           key: "speed",
@@ -221,7 +247,6 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
     },
     chatterbox: {
       language: true,
-      promptPrefix: true,
       ranges: [
         {
           key: "exaggeration",
@@ -268,7 +293,6 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
     },
     chatterbox_turbo: {
       language: false,
-      promptPrefix: true,
       ranges: [
         {
           key: "temperature",
@@ -299,7 +323,6 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
     },
     mock: {
       language: false,
-      promptPrefix: false,
       ranges: [
         {
           key: "paragraph_gap_ms",
@@ -353,7 +376,8 @@ function App() {
     Record<string, ChapterEditHistory>
   >({});
   const [customName, setCustomName] = useState("");
-  const [customEngine, setCustomEngine] = useState<EngineName>("chatterbox");
+  const [customEngine, setCustomEngine] =
+    useState<EngineName>(defaultTtsModel);
   const [customParams, setCustomParams] = useState(
     '{"speed": 0.95, "exaggeration": 0.65, "cfg_weight": 0.35}',
   );
@@ -1077,16 +1101,17 @@ function App() {
     });
   }
 
-  const activeCapabilities = capabilityForEngine(
-    capabilities,
-    styleDraft.engine,
-  );
+  const activeEngine = styleDraft.engine ?? defaultTtsModel;
+  const activeEngineLayout =
+    ttsModelLayoutByEngine[activeEngine] ??
+    ttsModelLayoutByEngine[defaultTtsModel]!;
+  const activeCapabilities = capabilityForEngine(capabilities, activeEngine);
   const languageOptions = activeCapabilities?.languages ?? [];
   const voiceOptions = voiceOptionsForLanguage(
     activeCapabilities,
     styleDraft.language,
   );
-  const activeEngineSettings = settingsForEngine(styleDraft.engine);
+  const activeEngineSettings = settingsForEngine(activeEngine);
   const voicePresetStyles = styles;
 
   const selectedStyleName =
@@ -1097,7 +1122,29 @@ function App() {
   return (
     <main className="app-shell">
       <header className="status-strip" aria-label="System status">
-        <span>Narration: {formatEngineName(styleDraft.engine)}</span>
+        <label className="status-model-field">
+          <span className="visually-hidden">TTS model</span>
+          <span className="status-model-prefix">Narration:</span>
+          <span className="status-model-select-shell">
+            <select
+              value={activeEngine}
+              aria-label="TTS model"
+              onChange={(event) => {
+                const engine = event.currentTarget.value as EngineName;
+                setStyleDraft((current) =>
+                  normalizeStyleDraft({ ...current, engine }, capabilities),
+                );
+                setPreviewUrl(null);
+              }}
+            >
+              {ttsModelOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </span>
+        </label>
         <span aria-hidden="true">|</span>
         <span>Audio export: {health?.ffmpeg ? "Ready" : "Unavailable"}</span>
         <span aria-hidden="true">|</span>
@@ -1628,63 +1675,6 @@ function App() {
                     </button>
                     <small>JSON, .whisp, or audio file.</small>
                   </div>
-                  {styleDraft.engine === "chatterbox_turbo" && (
-                    <div className="cast-import-panel">
-                      <input
-                        ref={castVoiceInputRef}
-                        className="visually-hidden"
-                        type="file"
-                        multiple
-                        accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
-                        aria-label="Import character voice files"
-                        onChange={(event) =>
-                          void handleCastVoiceImport(event.currentTarget.files)
-                        }
-                      />
-                      <button
-                        className="secondary-action"
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => castVoiceInputRef.current?.click()}
-                      >
-                        <Upload size={18} />
-                        <span>Import character voices</span>
-                      </button>
-                      {book.cast.length > 0 && (
-                        <div className="cast-list" aria-label="Character cast">
-                          {book.cast.map((member) => (
-                            <div className="cast-row" key={member.id}>
-                              <span
-                                className="cast-swatch"
-                                style={{ backgroundColor: member.color }}
-                                aria-hidden="true"
-                              />
-                              <label className="field">
-                                <span>Character name</span>
-                                <input
-                                  value={member.name}
-                                  onChange={(event) =>
-                                    updateCastMemberName(
-                                      member.id,
-                                      event.currentTarget.value,
-                                    )
-                                  }
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                aria-label={`Remove ${member.name}`}
-                                title={`Remove ${member.name}`}
-                                onClick={() => removeCastMember(member.id)}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
                   {(customReference || customName.trim()) && (
                     <RitualDrawer
                       title="Custom voice details"
@@ -1754,93 +1744,120 @@ function App() {
                   )}
                 </section>
 
-                <section className="settings-section ritual-section narrator-section">
+                <section
+                  className={`settings-section ritual-section model-settings-section ${activeEngineLayout.className}`}
+                  data-testid="tts-model-layout"
+                  data-engine={activeEngine}
+                >
                   <div className="settings-heading">
-                    <Mic2 size={19} aria-hidden="true" />
-                    <h2>Narrator</h2>
+                    <Clock3 size={19} aria-hidden="true" />
+                    <h2>{activeEngineLayout.title}</h2>
                   </div>
-                  <SelectField
-                    label="Narration source"
-                    value={styleDraft.engine ?? "kokoro"}
-                    onChange={(value) => {
-                      const engine = value as EngineName;
-                      setStyleDraft((current) =>
-                        normalizeStyleDraft(
-                          { ...current, engine },
-                          capabilities,
-                        ),
-                      );
-                    }}
-                  >
-                    <option value="kokoro">Kokoro</option>
-                    <option value="chatterbox">Chatterbox</option>
-                    <option value="chatterbox_turbo">Chatterbox Turbo</option>
-                  </SelectField>
-                  <SelectField
-                    label="Narrator"
-                    value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
-                    disabled={voiceOptions.length === 0}
-                    onChange={(voice) =>
-                      setStyleDraft((current) => ({
-                        ...current,
-                        voice,
-                      }))
-                    }
-                  >
-                    {voiceOptions.map((voice) => (
-                      <option key={voice.value} value={voice.value}>
-                        {voice.label} ({voice.value})
-                      </option>
-                    ))}
-                  </SelectField>
-                  {activeEngineSettings.language && (
+                  <div className="model-primary-controls">
                     <SelectField
-                      label="Language"
+                      label="Narrator"
                       value={
-                        styleDraft.language ?? languageOptions[0]?.value ?? ""
+                        styleDraft.voice ?? voiceOptions[0]?.value ?? ""
                       }
-                      disabled={languageOptions.length === 0}
-                      onChange={(language) =>
-                        setStyleDraft((current) =>
-                          normalizeStyleDraft(
-                            { ...current, language },
-                            capabilities,
-                          ),
-                        )
+                      disabled={voiceOptions.length === 0}
+                      onChange={(voice) =>
+                        setStyleDraft((current) => ({
+                          ...current,
+                          voice,
+                        }))
                       }
                     >
-                      {languageOptions.map((language) => (
-                        <option key={language.value} value={language.value}>
-                          {language.label}
+                      {voiceOptions.map((voice) => (
+                        <option key={voice.value} value={voice.value}>
+                          {voice.label}
                         </option>
                       ))}
                     </SelectField>
-                  )}
-                </section>
-
-                <section className="settings-section ritual-section rune-section">
-                  <div className="settings-heading">
-                    <Clock3 size={19} aria-hidden="true" />
-                    <h2>Voice fine-tuning</h2>
+                    {activeEngineSettings.language && (
+                      <SelectField
+                        label="Language"
+                        value={
+                          styleDraft.language ??
+                          languageOptions[0]?.value ??
+                          ""
+                        }
+                        disabled={languageOptions.length === 0}
+                        onChange={(language) =>
+                          setStyleDraft((current) =>
+                            normalizeStyleDraft(
+                              { ...current, language },
+                              capabilities,
+                            ),
+                          )
+                        }
+                      >
+                        {languageOptions.map((language) => (
+                          <option key={language.value} value={language.value}>
+                            {language.label}
+                          </option>
+                        ))}
+                      </SelectField>
+                    )}
                   </div>
+                  {activeEngine === "chatterbox_turbo" && (
+                    <div className="cast-import-panel">
+                      <input
+                        ref={castVoiceInputRef}
+                        className="visually-hidden"
+                        type="file"
+                        multiple
+                        accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                        aria-label="Import character voice files"
+                        onChange={(event) =>
+                          void handleCastVoiceImport(event.currentTarget.files)
+                        }
+                      />
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => castVoiceInputRef.current?.click()}
+                      >
+                        <Upload size={18} />
+                        <span>Import character voices</span>
+                      </button>
+                      {book.cast.length > 0 && (
+                        <div className="cast-list" aria-label="Character cast">
+                          {book.cast.map((member) => (
+                            <div className="cast-row" key={member.id}>
+                              <span
+                                className="cast-swatch"
+                                style={{ backgroundColor: member.color }}
+                                aria-hidden="true"
+                              />
+                              <label className="field">
+                                <span>Character name</span>
+                                <input
+                                  value={member.name}
+                                  onChange={(event) =>
+                                    updateCastMemberName(
+                                      member.id,
+                                      event.currentTarget.value,
+                                    )
+                                  }
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${member.name}`}
+                                title={`Remove ${member.name}`}
+                                onClick={() => removeCastMember(member.id)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <RitualDrawer title="Voice fine-tuning">
                     <div className="control-grid">
-                      {activeEngineSettings.promptPrefix && (
-                        <label className="field tts-prompt-field">
-                          <span>Narration guidance</span>
-                          <textarea
-                            rows={3}
-                            value={styleDraft.prompt_prefix ?? ""}
-                            onChange={(event) => {
-                              const promptPrefix = event.currentTarget.value;
-                              setStyleDraft((current) => ({
-                                ...current,
-                                prompt_prefix: promptPrefix,
-                              }));
-                            }}
-                          />
-                        </label>
-                      )}
                       {activeEngineSettings.ranges.map((control) => (
                         <RangeControl
                           key={control.key}
@@ -2642,16 +2659,6 @@ function formatParagraphNumber(index: number): string {
   return String(index + 1).padStart(3, "0");
 }
 
-function formatEngineName(engine?: EngineName): string {
-  if (!engine) {
-    return "Kokoro";
-  }
-  return engine
-    .split("_")
-    .map((part) => titleCase(part))
-    .join(" ");
-}
-
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -2841,7 +2848,7 @@ function normalizeStyleDraft(
   draft: StyleOverride,
   capabilities: TTSCapabilities | null,
 ): StyleOverride {
-  const engine = draft.engine ?? "kokoro";
+  const engine = draft.engine ?? defaultTtsModel;
   const engineCapabilities = capabilityForEngine(capabilities, engine);
   if (!engineCapabilities) {
     return { ...draft, engine };
@@ -2865,6 +2872,7 @@ function normalizeStyleDraft(
     engine,
     language,
     voice,
+    prompt_prefix: "",
   };
 }
 
@@ -2872,7 +2880,8 @@ function settingsForEngine(
   engine: EngineName | undefined,
 ): EngineSettingsConfig {
   return (
-    engineSettingsByModel[engine ?? "kokoro"] ?? engineSettingsByModel.kokoro!
+    engineSettingsByModel[engine ?? defaultTtsModel] ??
+    engineSettingsByModel[defaultTtsModel]!
   );
 }
 
@@ -2883,7 +2892,12 @@ function capabilityForEngine(
   if (!capabilities) {
     return null;
   }
-  return capabilities[engine ?? "kokoro"] ?? capabilities.kokoro ?? null;
+  return (
+    capabilities[engine ?? defaultTtsModel] ??
+    capabilities[defaultTtsModel] ??
+    capabilities.kokoro ??
+    null
+  );
 }
 
 function voiceOptionsForLanguage(

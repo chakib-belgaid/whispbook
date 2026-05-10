@@ -369,9 +369,9 @@ def engine_style_fields(engine: str) -> List[str]:
     if engine == "kokoro":
         return shared_fields + ["language", "speed"]
     if engine == "chatterbox":
-        return shared_fields + ["language", "exaggeration", "cfg_weight", "temperature", "top_p", "prompt_prefix"]
+        return shared_fields + ["language", "exaggeration", "cfg_weight", "temperature", "top_p"]
     if engine == "chatterbox_turbo":
-        return shared_fields + ["temperature", "top_p", "prompt_prefix"]
+        return shared_fields + ["temperature", "top_p"]
     return ["paragraph_gap_ms", "comma_pause_ms"]
 
 
@@ -389,9 +389,17 @@ def normalize_style_for_engine(style: VoiceStyle) -> VoiceStyle:
             }
         )
     elif engine == "chatterbox":
-        payload["speed"] = 1.0
+        payload.update({"speed": 1.0, "prompt_prefix": ""})
     elif engine == "chatterbox_turbo":
-        payload.update({"language": "en", "speed": 1.0, "exaggeration": 0.5, "cfg_weight": 0.5})
+        payload.update(
+            {
+                "language": "en",
+                "speed": 1.0,
+                "exaggeration": 0.5,
+                "cfg_weight": 0.5,
+                "prompt_prefix": "",
+            }
+        )
     return VoiceStyle.model_validate(payload)
 
 

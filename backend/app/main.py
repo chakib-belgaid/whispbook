@@ -13,7 +13,14 @@ from fastapi.staticfiles import StaticFiles
 
 from . import ffmpeg
 from .capabilities import tts_capabilities
-from .jobs import JobRunner, merge_style, render_annotated_paragraph, strip_paralinguistic_tags, validate_voice_ranges
+from .jobs import (
+    JobRunner,
+    merge_style,
+    normalize_style_for_engine,
+    render_annotated_paragraph,
+    strip_paralinguistic_tags,
+    validate_voice_ranges,
+)
 from .models import (
     Book,
     BookPatch,
@@ -136,7 +143,7 @@ async def create_custom_style(
         reference_audio_url=reference_url,
         custom=True,
     )
-    return save_custom_style(style)
+    return save_custom_style(normalize_style_for_engine(style))
 
 
 def save_reference_audio(

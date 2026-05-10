@@ -149,6 +149,45 @@ summary:focus-visible,
   white-space: nowrap;
 }
 
+.status-model-field {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  font-weight: 800;
+}
+
+.status-model-prefix {
+  color: #f5d49b;
+}
+
+.status-model-select-shell {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.status-model-select-shell select {
+  max-width: 13.2rem;
+  min-height: 28px;
+  border: 1px solid rgba(230, 171, 79, 0.28);
+  border-radius: 999px;
+  padding: 0 28px 0 10px;
+  color: #f9ddaa;
+  background:
+    linear-gradient(180deg, rgba(255, 224, 153, 0.13), rgba(88, 45, 19, 0.1)),
+    rgba(255, 218, 139, 0.06);
+  font: inherit;
+  font-size: 0.94rem;
+  font-weight: 800;
+}
+
+.status-model-select-shell select:focus-visible {
+  outline: 2px solid rgba(245, 196, 104, 0.68);
+  outline-offset: 2px;
+}
+
 .status-config-button {
   display: grid;
   width: 28px;
@@ -1449,6 +1488,66 @@ summary:focus-visible,
   color: #744719;
 }
 
+.model-settings-section {
+  --model-accent: #6f4a93;
+  position: relative;
+  border-bottom-color: color-mix(in srgb, var(--model-accent) 34%, #6b431e);
+  padding-left: 12px;
+}
+
+.model-settings-section::before {
+  position: absolute;
+  top: 2px;
+  bottom: 14px;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--model-accent) 86%, #f5c46f),
+    rgba(123, 76, 30, 0.46)
+  );
+  content: "";
+}
+
+.model-settings-section--turbo {
+  --model-accent: #7a4d9b;
+}
+
+.model-settings-section--chatterbox {
+  --model-accent: #4f7f74;
+}
+
+.model-settings-section--kokoro {
+  --model-accent: #9c6730;
+}
+
+.model-primary-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.model-settings-section .settings-heading h2 {
+  color: color-mix(in srgb, var(--model-accent) 48%, #3a2412);
+}
+
+.model-settings-section .settings-heading svg {
+  color: var(--model-accent);
+}
+
+.model-settings-section .cast-import-panel {
+  border: 1px solid color-mix(in srgb, var(--model-accent) 24%, #8d5d2c);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--model-accent) 12%, transparent),
+      rgba(244, 198, 113, 0.16)
+    ),
+    rgba(255, 239, 202, 0.34);
+}
+
 .render-panel .field input,
 .render-panel .field select,
 .render-panel .field textarea {
@@ -2017,6 +2116,17 @@ summary:focus-visible,
 
   .status-strip {
     font-size: 0.74rem;
+  }
+
+  .status-model-field {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .status-model-select-shell select {
+    max-width: 10.5rem;
+    min-height: 26px;
+    font-size: 0.78rem;
   }
 
   .status-strip span[aria-hidden="true"] {

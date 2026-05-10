@@ -152,7 +152,7 @@ Imports are local uploads only. URL import, ZIP import, audio/video transcriptio
 
 ## Custom Styles
 
-Custom style JSON can include narration metadata and engine parameters:
+Custom style JSON can include engine parameters:
 
 ```json
 {
@@ -165,8 +165,7 @@ Custom style JSON can include narration metadata and engine parameters:
   "temperature": 0.85,
   "top_p": 0.95,
   "paragraph_gap_ms": 650,
-  "comma_pause_ms": 180,
-  "prompt_prefix": "[deep breath] "
+  "comma_pause_ms": 180
 }
 ```
 
