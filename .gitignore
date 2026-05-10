@@ -11,3 +11,4 @@ backend/app/__pycache__/
 backend/tests/__pycache__/
 .pytest_cache/
 .superpowers/
+**/__pycache__

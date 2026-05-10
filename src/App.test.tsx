@@ -239,6 +239,22 @@ describe("App review fixes", () => {
     expect(fineTuning.textContent).toContain("Pause between paragraphs");
   });
 
+  it("hides comma pause settings for Chatterbox engines", async () => {
+    const { container } = await renderApp();
+
+    expect(container.textContent).toContain("Comma pause");
+
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox");
+    });
+    expect(container.textContent).not.toContain("Comma pause");
+
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+    expect(container.textContent).not.toContain("Comma pause");
+  });
+
   it("renders sample playback with themed controls instead of native browser audio chrome", async () => {
     const { container } = await renderApp();
 

@@ -1,7 +1,36 @@
+from pathlib import Path
+
 from app.models import VoiceStyle
 from app.jobs import merge_style
 from app.storage import default_styles
-from app.tts import split_text_for_tts
+from app.tts import BaseEngine, TTSManager, split_text_for_tts
+
+
+class RecordingEngine(BaseEngine):
+    name = "recording"
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def synthesize(self, text: str, style: VoiceStyle, output_path: Path) -> None:
+        self.texts.append(text)
+        output_path.write_bytes(b"fake wav")
+
+
+def stub_audio_pipeline(monkeypatch) -> None:
+    monkeypatch.setattr("app.tts.normalize_in_place", lambda path: None)
+    monkeypatch.setattr(
+        "app.tts.normalize_wav",
+        lambda input_path, output_path: output_path.write_bytes(b"normalized"),
+    )
+    monkeypatch.setattr(
+        "app.tts.make_silence",
+        lambda path, duration_seconds: path.write_bytes(b"silence"),
+    )
+    monkeypatch.setattr(
+        "app.tts.concat_audio",
+        lambda files, output_path: output_path.write_bytes(b"concat"),
+    )
 
 
 def test_split_text_for_tts_inserts_comma_pauses():
@@ -36,6 +65,44 @@ def test_split_text_for_tts_pauses_after_commas_before_closing_quotes():
         ("", 220),
         ("\u201clisten.\u201d", 0),
     ]
+
+
+def test_chatterbox_ignores_artificial_punctuation_pauses(monkeypatch, tmp_path):
+    stub_audio_pipeline(monkeypatch)
+    engine = RecordingEngine()
+    manager = TTSManager()
+    manager.engines["chatterbox"] = engine
+    style = VoiceStyle(
+        id="chatter",
+        name="Chatterbox",
+        engine="chatterbox",
+        voice="reference",
+        language="en",
+        comma_pause_ms=240,
+    )
+
+    manager.synthesize("Wait, listen. Then answer.", style, tmp_path / "out.wav")
+
+    assert engine.texts == ["Wait, listen. Then answer."]
+
+
+def test_chatterbox_turbo_ignores_artificial_punctuation_pauses(monkeypatch, tmp_path):
+    stub_audio_pipeline(monkeypatch)
+    engine = RecordingEngine()
+    manager = TTSManager()
+    manager.engines["chatterbox_turbo"] = engine
+    style = VoiceStyle(
+        id="turbo",
+        name="Chatterbox Turbo",
+        engine="chatterbox_turbo",
+        voice="reference",
+        language="en",
+        comma_pause_ms=240,
+    )
+
+    manager.synthesize("Wait, listen. Then answer.", style, tmp_path / "out.wav")
+
+    assert engine.texts == ["Wait, listen. Then answer."]
 
 
 def test_merge_style_clears_chatterbox_prompt_when_switching_to_kokoro():

@@ -197,7 +197,10 @@ class TTSManager:
         return self.engines[name]
 
     def synthesize(self, text: str, style: VoiceStyle, output_path: Path) -> None:
-        units = split_text_for_tts(style.prompt_prefix + text, comma_pause_ms=style.comma_pause_ms)
+        units = split_text_for_tts(
+            style.prompt_prefix + text,
+            comma_pause_ms=punctuation_pause_ms_for_engine(style),
+        )
         if len(units) == 1 and not units[0].is_pause:
             self.get_engine(style.engine).synthesize(units[0].text, style, output_path)
             normalize_in_place(output_path)
@@ -240,6 +243,12 @@ def split_text_for_tts(text: str, comma_pause_ms: int = 160) -> List[TTSUnit]:
     while units and units[-1].is_pause:
         units.pop()
     return units or [TTSUnit(text=".")]
+
+
+def punctuation_pause_ms_for_engine(style: VoiceStyle) -> int:
+    if style.engine in {"chatterbox", "chatterbox_turbo"}:
+        return 0
+    return style.comma_pause_ms
 
 
 def split_paused_paragraph(paragraph: str, comma_pause_ms: int) -> List[TTSUnit]:
