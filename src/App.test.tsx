@@ -113,7 +113,7 @@ describe("App review fixes", () => {
 
     const promptPrefix = controlByLabel<HTMLTextAreaElement>(
       container,
-      "Opening incantation",
+      "Narration guidance",
     );
     promptPrefix.value = "[hushed] ";
     await act(async () => {
@@ -146,18 +146,40 @@ describe("App review fixes", () => {
       "chatterbox_turbo",
     );
     expect(controlByLabel<HTMLSelectElement>(container, "Narrator").value).toBe("reference");
-    expect(controlByLabel<HTMLTextAreaElement>(container, "Opening incantation").value).toBe(
+    expect(controlByLabel<HTMLTextAreaElement>(container, "Narration guidance").value).toBe(
       "[calm] ",
     );
   });
 
-  it("keeps technical rune drawers collapsed by default", async () => {
+  it("uses clear audiobook settings labels instead of fantasy config terms", async () => {
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ custom: true, id: "custom", name: "Custom" }),
+    ]);
     const { container } = await renderApp();
 
-    const ritualRunes = detailsBySummary(container, "Ritual Runes");
-    expect(ritualRunes.open).toBe(false);
-    expect(ritualRunes.textContent).toContain("Reading pace");
-    expect(ritualRunes.textContent).toContain("Chapter breath");
+    expect(
+      container.querySelector('[aria-label="Open audiobook settings"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Audiobook");
+    expect(container.textContent).toContain("Voice presets");
+    expect(container.textContent).toContain("Current settings");
+    expect(container.textContent).toContain("Voice fine-tuning");
+    expect(container.textContent).toContain("Output");
+    expect(container.textContent).toContain("Create audiobook");
+
+    expect(container.textContent).not.toContain("Spellbook");
+    expect(container.textContent).not.toContain("Ritual Runes");
+    expect(container.textContent).not.toContain("Opening incantation");
+    expect(container.textContent).not.toContain("voice charm");
+  });
+
+  it("keeps fine-tuning drawers collapsed by default", async () => {
+    const { container } = await renderApp();
+
+    const fineTuning = detailsBySummary(container, "Voice fine-tuning");
+    expect(fineTuning.open).toBe(false);
+    expect(fineTuning.textContent).toContain("Reading pace");
+    expect(fineTuning.textContent).toContain("Pause between paragraphs");
   });
 
   it("passes the selected reference audio start point when saving a custom style", async () => {
@@ -174,18 +196,21 @@ describe("App review fixes", () => {
       input?.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    const voiceRunes = detailsBySummary(container, "Deeper voice runes");
-    voiceRunes.open = true;
-    voiceRunes.dispatchEvent(new Event("toggle", { bubbles: true }));
+    const voiceDetails = detailsBySummary(container, "Custom voice details");
+    voiceDetails.open = true;
+    voiceDetails.dispatchEvent(new Event("toggle", { bubbles: true }));
 
-    const startInput = controlByLabel<HTMLInputElement>(container, "Begin charm at");
+    const startInput = controlByLabel<HTMLInputElement>(
+      container,
+      "Sample start (seconds)",
+    );
     startInput.value = "15";
     await act(async () => {
       startInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     await act(async () => {
-      buttonByText(container, "Save voice charm").click();
+      buttonByText(container, "Save voice style").click();
     });
 
     expect(apiMock.createCustomStyle).toHaveBeenCalledWith(

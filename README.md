@@ -106,7 +106,7 @@ Imports are local uploads only. URL import, ZIP import, audio/video transcriptio
 
 ## Exported generation scripts
 
-Use **Export script** in the Style panel to download a Python script for the current UI configuration. The script includes:
+Use **Export script** in the Audiobook panel to download a Python script for the current voice settings. The script includes:
 
 - Current book edits and paragraph inclusion flags.
 - Selected chapter IDs.

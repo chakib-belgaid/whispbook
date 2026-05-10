@@ -180,7 +180,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "paragraph_gap_ms",
-          label: "Chapter breath",
+          label: "Pause between paragraphs",
           min: 0,
           max: 1500,
           step: 25,
@@ -189,7 +189,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma hush",
+          label: "Comma pause",
           min: 0,
           max: 600,
           step: 20,
@@ -204,7 +204,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
       ranges: [
         {
           key: "exaggeration",
-          label: "Dramatic color",
+          label: "Expressiveness",
           min: 0,
           max: 1.2,
           step: 0.01,
@@ -212,7 +212,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "cfg_weight",
-          label: "Narrator discipline",
+          label: "Voice consistency",
           min: 0,
           max: 1,
           step: 0.01,
@@ -220,7 +220,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "temperature",
-          label: "Creative spark",
+          label: "Voice variation",
           min: 0.2,
           max: 1.2,
           step: 0.01,
@@ -228,7 +228,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "top_p",
-          label: "Focus circle",
+          label: "Word choice focus",
           min: 0.1,
           max: 1,
           step: 0.01,
@@ -236,7 +236,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "paragraph_gap_ms",
-          label: "Chapter breath",
+          label: "Pause between paragraphs",
           min: 0,
           max: 1500,
           step: 25,
@@ -245,7 +245,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma hush",
+          label: "Comma pause",
           min: 0,
           max: 600,
           step: 20,
@@ -260,7 +260,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
       ranges: [
         {
           key: "temperature",
-          label: "Creative spark",
+          label: "Voice variation",
           min: 0.2,
           max: 1.2,
           step: 0.01,
@@ -268,7 +268,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "top_p",
-          label: "Focus circle",
+          label: "Word choice focus",
           min: 0.1,
           max: 1,
           step: 0.01,
@@ -276,7 +276,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "paragraph_gap_ms",
-          label: "Chapter breath",
+          label: "Pause between paragraphs",
           min: 0,
           max: 1500,
           step: 25,
@@ -285,7 +285,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma hush",
+          label: "Comma pause",
           min: 0,
           max: 600,
           step: 20,
@@ -300,7 +300,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
       ranges: [
         {
           key: "paragraph_gap_ms",
-          label: "Chapter breath",
+          label: "Pause between paragraphs",
           min: 0,
           max: 1500,
           step: 25,
@@ -309,7 +309,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma hush",
+          label: "Comma pause",
           min: 0,
           max: 600,
           step: 20,
@@ -666,7 +666,7 @@ function App() {
 
   async function handleCustomStyle(): Promise<void> {
     if (!customName.trim()) {
-      setError("Name the custom style.");
+      setError("Give this voice style a name.");
       return;
     }
     setBusy("Saving style");
@@ -907,16 +907,16 @@ function App() {
   return (
     <main className="app-shell">
       <header className="status-strip" aria-label="System status">
-        <span>Source: {formatEngineName(styleDraft.engine)}</span>
+        <span>Narration: {formatEngineName(styleDraft.engine)}</span>
         <span aria-hidden="true">|</span>
-        <span>Renderer: {health?.ffmpeg ? "FFMPEG" : "Unavailable"}</span>
+        <span>Audio export: {health?.ffmpeg ? "Ready" : "Unavailable"}</span>
         <span aria-hidden="true">|</span>
-        <span>Charm: {selectedStyleName}</span>
+        <span>Voice: {selectedStyleName}</span>
         <button
           className="status-config-button"
           type="button"
-          title="Open narration console"
-          aria-label="Open narration console"
+          title="Open audiobook settings"
+          aria-label="Open audiobook settings"
           onClick={() => setActivePane("render")}
         >
           <Settings size={16} aria-hidden="true" />
@@ -973,7 +973,7 @@ function App() {
             onClick={() => setActivePane("render")}
           >
             <FileAudio size={17} aria-hidden="true" />
-            <span>Render</span>
+            <span>Audiobook</span>
           </button>
         </nav>
 
@@ -1281,16 +1281,16 @@ function App() {
             <div className="zone-overlay" aria-hidden="true" />
             <aside
               className="render-panel settings-scroll zone-content"
-              aria-label="Narration ritual console"
+              aria-label="Audiobook settings"
             >
             <section className="settings-section ritual-section custom-style-section">
               <div className="settings-heading">
                 <Wand2 size={19} aria-hidden="true" />
-                <h2>Spellbook</h2>
+                <h2>Voice presets</h2>
               </div>
               {customStyles.length > 0 && (
                 <SelectField
-                  label="Saved spellbook voice"
+                  label="Saved voice preset"
                   value={
                     customStyles.some((style) => style.id === styleDraft.style_id)
                       ? styleDraft.style_id
@@ -1308,7 +1308,7 @@ function App() {
                     }
                   }}
                 >
-                  <option value="">Current ritual</option>
+                  <option value="">Current settings</option>
                   {customStyles.map((style) => (
                     <option key={style.id} value={style.id}>
                       {style.name}
@@ -1332,18 +1332,18 @@ function App() {
                   onClick={() => styleReferenceRef.current?.click()}
                 >
                   <Upload size={18} />
-                  <span>Import voice charm</span>
+                  <span>Import voice style</span>
                 </button>
-                <small>json, .whisp, or audio charm.</small>
+                <small>JSON, .whisp, or audio file.</small>
               </div>
               {(customReference || customName.trim()) && (
                 <RitualDrawer
-                  title="Deeper voice runes"
+                  title="Custom voice details"
                   className="advanced-style"
                 >
                   <div className="control-grid">
                     <label className="field style-name-field">
-                      <span>Charm name</span>
+                      <span>Voice style name</span>
                       <input
                         placeholder="Custom style name"
                         value={customName}
@@ -1363,7 +1363,7 @@ function App() {
                     </SelectField>
                     {customReference && (
                       <label className="field">
-                        <span>Begin charm at</span>
+                        <span>Sample start (seconds)</span>
                         <input
                           type="number"
                           min="0"
@@ -1383,7 +1383,7 @@ function App() {
                       </label>
                     )}
                     <label className="field">
-                      <span>Rune ledger</span>
+                      <span>Style options</span>
                       <textarea
                         rows={3}
                         value={customParams}
@@ -1400,7 +1400,7 @@ function App() {
                     onClick={() => void handleCustomStyle()}
                   >
                     <Check size={18} />
-                    <span>Save voice charm</span>
+                    <span>Save voice style</span>
                   </button>
                 </RitualDrawer>
               )}
@@ -1413,7 +1413,7 @@ function App() {
               </div>
               <SelectField
                 label="Narration source"
-                value={styleDraft.engine}
+                value={styleDraft.engine ?? "kokoro"}
                 onChange={(value) => {
                   const engine = value as EngineName;
                   setStyleDraft((current) =>
@@ -1468,13 +1468,13 @@ function App() {
             <section className="settings-section ritual-section rune-section">
               <div className="settings-heading">
                 <Clock3 size={19} aria-hidden="true" />
-                <h2>Ritual Runes</h2>
+                <h2>Voice fine-tuning</h2>
               </div>
-              <RitualDrawer title="Ritual Runes">
+              <RitualDrawer title="Voice fine-tuning">
                 <div className="control-grid">
                   {activeEngineSettings.promptPrefix && (
                     <label className="field tts-prompt-field">
-                      <span>Opening incantation</span>
+                      <span>Narration guidance</span>
                       <textarea
                         rows={3}
                         value={styleDraft.prompt_prefix ?? ""}
@@ -1512,7 +1512,7 @@ function App() {
             <section className="settings-section output-section">
               <div className="settings-heading">
                 <FileAudio size={19} aria-hidden="true" />
-                <h2>Binding</h2>
+                <h2>Output</h2>
               </div>
               <div className="output-actions">
                 <button
@@ -1523,7 +1523,7 @@ function App() {
                 >
                   <Play size={18} />
                   <span>
-                    {busy === "Previewing" ? "Listening" : "Hear a passage"}
+                    {busy === "Previewing" ? "Creating sample" : "Listen to sample"}
                   </span>
                 </button>
                 <button
@@ -1533,7 +1533,7 @@ function App() {
                   onClick={handleExportScript}
                 >
                   <FileText size={18} />
-                  <span>Copy ritual script</span>
+                  <span>Export script</span>
                 </button>
                 <button
                   className="generate-action"
@@ -1543,7 +1543,7 @@ function App() {
                 >
                   <Sparkles size={20} />
                   <span>
-                    {busy === "Starting" ? "Binding" : "Bind the audiobook"}
+                    {busy === "Starting" ? "Starting" : "Create audiobook"}
                   </span>
                   <ChevronRight size={20} />
                 </button>
@@ -1561,7 +1561,7 @@ function App() {
                 aria-live="polite"
               >
                 <div className="panel-heading">
-                  <h2>Binding progress</h2>
+                  <h2>Audiobook progress</h2>
                   <span>{Math.round(job.progress)}%</span>
                 </div>
                 <div className="progress-bar" aria-hidden="true">
