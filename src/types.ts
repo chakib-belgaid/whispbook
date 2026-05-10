@@ -1,4 +1,9 @@
-export type ChapterStatus = "draft" | "queued" | "generating" | "done" | "error";
+export type ChapterStatus =
+  | "draft"
+  | "queued"
+  | "generating"
+  | "done"
+  | "error";
 export type EngineName = "kokoro" | "chatterbox" | "chatterbox_turbo" | "mock";
 export type JobStatus = "queued" | "running" | "done" | "error";
 

@@ -1,4 +1,12 @@
-import type { Book, GenerateJob, HealthResponse, PreviewResponse, StyleOverride, TTSCapabilities, VoiceStyle } from "../types";
+import type {
+  Book,
+  GenerateJob,
+  HealthResponse,
+  PreviewResponse,
+  StyleOverride,
+  TTSCapabilities,
+  VoiceStyle,
+} from "../types";
 
 export async function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/api/health");
@@ -26,7 +34,7 @@ export async function importBook(file: File, title: string): Promise<Book> {
   form.set("title", title);
   return request<Book>("/api/books/import", {
     method: "POST",
-    body: form
+    body: form,
   });
 }
 
@@ -43,30 +51,39 @@ export async function saveBook(book: Book): Promise<Book> {
         paragraphs: chapter.paragraphs.map((paragraph) => ({
           id: paragraph.id,
           text: paragraph.text,
-          included: paragraph.included
-        }))
-      }))
-    })
+          included: paragraph.included,
+        })),
+      })),
+    }),
   });
 }
 
-export async function createPreview(bookId: string, text: string, style: StyleOverride, subtitleText: string): Promise<PreviewResponse> {
+export async function createPreview(
+  bookId: string,
+  text: string,
+  style: StyleOverride,
+  subtitleText: string,
+): Promise<PreviewResponse> {
   return request<PreviewResponse>(`/api/books/${bookId}/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, style, subtitle_text: subtitleText })
+    body: JSON.stringify({ text, style, subtitle_text: subtitleText }),
   });
 }
 
-export async function startGeneration(bookId: string, chapterIds: string[], style: StyleOverride): Promise<GenerateJob> {
+export async function startGeneration(
+  bookId: string,
+  chapterIds: string[],
+  style: StyleOverride,
+): Promise<GenerateJob> {
   return request<GenerateJob>(`/api/books/${bookId}/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chapter_ids: chapterIds,
       style,
-      subtitle_source: "edited"
-    })
+      subtitle_source: "edited",
+    }),
   });
 }
 
@@ -91,7 +108,7 @@ export async function createCustomStyle(input: {
   }
   return request<VoiceStyle>("/api/styles/custom", {
     method: "POST",
-    body: form
+    body: form,
   });
 }
 
@@ -103,7 +120,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (body) {
       try {
         const payload = JSON.parse(body) as { detail?: unknown };
-        detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail);
+        detail =
+          typeof payload.detail === "string"
+            ? payload.detail
+            : JSON.stringify(payload.detail);
       } catch {
         detail = body;
       }

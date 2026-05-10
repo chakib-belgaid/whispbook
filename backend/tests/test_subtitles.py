@@ -1,4 +1,4 @@
-from app.subtitles import SubtitleCue, format_srt_time, format_vtt_time, wrap_subtitle_text
+from app.subtitles import format_srt_time, format_vtt_time, wrap_subtitle_text
 
 
 def test_subtitle_time_formatting():
@@ -11,4 +11,3 @@ def test_subtitle_text_is_wrapped_and_escaped():
 
     assert len(lines) > 1
     assert "&lt;markup&gt;" in " ".join(lines)
-

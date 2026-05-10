@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
+    "format": "prettier --write README.md package.json eslint.config.js \"*.config.ts\" \"src/**/*.{ts,tsx,css}\" \".github/**/*.yml\"",
+    "format:check": "prettier --check README.md package.json eslint.config.js \"*.config.ts\" \"src/**/*.{ts,tsx,css}\" \".github/**/*.yml\"",
+    "lint": "eslint src vite.config.ts vitest.config.ts eslint.config.js",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run"
   },
@@ -16,12 +19,18 @@
     "react-dom": "^19.2.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.10.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.6.0",
     "jsdom": "^27.2.0",
+    "prettier": "^3.8.3",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.2",
     "vite": "^7.2.4",
     "vitest": "^4.0.13"
   }

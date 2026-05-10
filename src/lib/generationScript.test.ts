@@ -5,7 +5,7 @@ import {
   buildGenerationScript,
   defaultBackendUrlFromLocation,
   generationScriptFilename,
-  selectedGenerationChapterIds
+  selectedGenerationChapterIds,
 } from "./generationScript";
 import type { Book, StyleOverride } from "../types";
 
@@ -23,7 +23,7 @@ describe("generation script export", () => {
       temperature: 0.84,
       top_p: 0.95,
       paragraph_gap_ms: 650,
-      prompt_prefix: "[aside] "
+      prompt_prefix: "[aside] ",
     };
 
     expect(selectedGenerationChapterIds(book)).toEqual(["ch-0001"]);
@@ -32,7 +32,7 @@ describe("generation script export", () => {
     expect(patch.chapters[0].paragraphs[0]).toEqual({
       id: "ch-0001-p-0001",
       text: "Edited opening line.",
-      included: true
+      included: true,
     });
     expect(patch.chapters[1].selected).toBe(false);
 
@@ -40,7 +40,7 @@ describe("generation script export", () => {
     expect(request).toMatchObject({
       chapter_ids: ["ch-0001"],
       subtitle_source: "edited",
-      style
+      style,
     });
   });
 
@@ -52,18 +52,18 @@ describe("generation script export", () => {
       voice: "af_heart",
       language: "a",
       speed: 1,
-      paragraph_gap_ms: 450
+      paragraph_gap_ms: 450,
     };
 
     const script = buildGenerationScript(book, style, {
       defaultApiUrl: "http://localhost:8000",
-      exportedAt: "2026-05-08T09:00:00.000Z"
+      exportedAt: "2026-05-08T09:00:00.000Z",
     });
     const generationRequest = decodedConstant(script, "GENERATE_REQUEST_B64");
     const metadata = decodedConstant(script, "EXPORT_METADATA_B64");
 
     expect(script).toContain('DEFAULT_API_URL = "http://localhost:8000"');
-    expect(script).toContain("request_json(\"POST\", api_url");
+    expect(script).toContain('request_json("POST", api_url');
     expect(generationRequest.chapter_ids).toEqual(["ch-0001"]);
     expect(generationRequest.style.engine).toBe("kokoro");
     expect(metadata.selected_chapters).toEqual([
@@ -71,8 +71,8 @@ describe("generation script export", () => {
         id: "ch-0001",
         index: 0,
         title: "One",
-        included_paragraphs: 1
-      }
+        included_paragraphs: 1,
+      },
     ]);
   });
 
@@ -82,32 +82,40 @@ describe("generation script export", () => {
         protocol: "http:",
         hostname: "192.168.1.20",
         port: "5173",
-        origin: "http://192.168.1.20:5173"
-      })
+        origin: "http://192.168.1.20:5173",
+      }),
     ).toBe("http://192.168.1.20:8000");
     expect(
       defaultBackendUrlFromLocation({
         protocol: "https:",
         hostname: "books.example.test",
         port: "",
-        origin: "https://books.example.test"
-      })
+        origin: "https://books.example.test",
+      }),
     ).toBe("https://books.example.test");
   });
 
   it("creates stable script filenames", () => {
-    expect(generationScriptFilename(sampleBook(), new Date("2026-05-08T09:00:00.000Z"))).toBe(
-      "whispbook-sample-book-2026-05-08T09-00-00-000Z.py"
-    );
+    expect(
+      generationScriptFilename(
+        sampleBook(),
+        new Date("2026-05-08T09:00:00.000Z"),
+      ),
+    ).toBe("whispbook-sample-book-2026-05-08T09-00-00-000Z.py");
   });
 
   it("rejects exports with no selected chapters", () => {
     const book = {
       ...sampleBook(),
-      chapters: sampleBook().chapters.map((chapter) => ({ ...chapter, selected: false }))
+      chapters: sampleBook().chapters.map((chapter) => ({
+        ...chapter,
+        selected: false,
+      })),
     };
 
-    expect(() => buildGenerationRequestSnapshot(book, { style_id: "neutral" })).toThrow("Select at least one chapter.");
+    expect(() =>
+      buildGenerationRequestSnapshot(book, { style_id: "neutral" }),
+    ).toThrow("Select at least one chapter.");
   });
 });
 
@@ -148,16 +156,16 @@ function sampleBook(): Book {
             index: 0,
             original_text: "Original opening line.",
             text: "Edited opening line.",
-            included: true
+            included: true,
           },
           {
             id: "ch-0001-p-0002",
             index: 1,
             original_text: "Cut this.",
             text: "Cut this.",
-            included: false
-          }
-        ]
+            included: false,
+          },
+        ],
       },
       {
         id: "ch-0002",
@@ -176,10 +184,10 @@ function sampleBook(): Book {
             index: 0,
             original_text: "Second chapter.",
             text: "Second chapter.",
-            included: true
-          }
-        ]
-      }
-    ]
+            included: true,
+          },
+        ],
+      },
+    ],
   };
 }

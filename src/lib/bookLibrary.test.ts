@@ -31,7 +31,10 @@ describe("book library helpers", () => {
 
     expect(calls).toEqual(["first-book.md:first-book", "second.pdf:second"]);
     expect(progress).toEqual(["1/2:first-book.md", "2/2:second.pdf"]);
-    expect(result.imported.map((book) => book.title)).toEqual(["first-book", "second"]);
+    expect(result.imported.map((book) => book.title)).toEqual([
+      "first-book",
+      "second",
+    ]);
     expect(result.failures).toEqual([]);
   });
 
@@ -55,14 +58,18 @@ describe("book library helpers", () => {
   });
 
   it("merges new library books without duplicating existing ids", () => {
-    const existing = [sampleBook("old", "Old"), sampleBook("duplicate", "Old duplicate")];
-    const incoming = [sampleBook("new", "New"), sampleBook("duplicate", "Updated duplicate")];
+    const existing = [
+      sampleBook("old", "Old"),
+      sampleBook("duplicate", "Old duplicate"),
+    ];
+    const incoming = [
+      sampleBook("new", "New"),
+      sampleBook("duplicate", "Updated duplicate"),
+    ];
 
-    expect(mergeLibraryBooks(existing, incoming).map((book) => book.title)).toEqual([
-      "New",
-      "Updated duplicate",
-      "Old",
-    ]);
+    expect(
+      mergeLibraryBooks(existing, incoming).map((book) => book.title),
+    ).toEqual(["New", "Updated duplicate", "Old"]);
   });
 
   it("reuses already parsed books by filename", () => {
@@ -76,7 +83,9 @@ describe("book library helpers", () => {
     const plan = planLibraryImports([duplicate, fresh, duplicate], existing);
 
     expect(plan.reused.map((book) => book.id)).toEqual(["book-1"]);
-    expect(plan.filesToImport.map((file) => file.name)).toEqual(["new-book.md"]);
+    expect(plan.filesToImport.map((file) => file.name)).toEqual([
+      "new-book.md",
+    ]);
   });
 
   it("normalizes filenames without locale-sensitive lowercasing", () => {
@@ -85,7 +94,9 @@ describe("book library helpers", () => {
       .mockImplementation(() => {
         throw new Error("locale-sensitive lowercase should not be used");
       });
-    const existing = [{ ...sampleBook("book-1", "Index"), filename: "Index.md" }];
+    const existing = [
+      { ...sampleBook("book-1", "Index"), filename: "Index.md" },
+    ];
 
     try {
       const plan = planLibraryImports(
@@ -101,7 +112,10 @@ describe("book library helpers", () => {
   });
 
   it("orders available books by the original selected file order", () => {
-    const existing = { ...sampleBook("book-1", "Existing"), filename: "existing.md" };
+    const existing = {
+      ...sampleBook("book-1", "Existing"),
+      filename: "existing.md",
+    };
     const imported = { ...sampleBook("book-2", "Fresh"), filename: "fresh.md" };
     const selectedFiles = [
       new File(["fresh"], "fresh.md", { type: "text/markdown" }),
@@ -109,7 +123,9 @@ describe("book library helpers", () => {
     ];
 
     expect(
-      orderBooksBySelectedFiles(selectedFiles, [existing, imported]).map((book) => book.id),
+      orderBooksBySelectedFiles(selectedFiles, [existing, imported]).map(
+        (book) => book.id,
+      ),
     ).toEqual(["book-2", "book-1"]);
   });
 
