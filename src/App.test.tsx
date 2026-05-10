@@ -42,10 +42,14 @@ describe("App review fixes", () => {
     apiMock.getHealth.mockResolvedValue(sampleHealth());
     apiMock.getStyles.mockResolvedValue([sampleStyle()]);
     apiMock.getTtsCapabilities.mockResolvedValue(sampleCapabilities());
-    apiMock.getBooks.mockResolvedValue([sampleBook("existing", "Existing", "existing.md")]);
+    apiMock.getBooks.mockResolvedValue([
+      sampleBook("existing", "Existing", "existing.md"),
+    ]);
     apiMock.saveBook.mockImplementation(async (book: Book) => book);
     apiMock.createPreview.mockResolvedValue(samplePreview());
-    apiMock.createCustomStyle.mockResolvedValue(sampleStyle({ custom: true, id: "custom", name: "Custom" }));
+    apiMock.createCustomStyle.mockResolvedValue(
+      sampleStyle({ custom: true, id: "custom", name: "Custom" }),
+    );
   });
 
   afterEach(() => {
@@ -60,7 +64,8 @@ describe("App review fixes", () => {
     const imported = sampleBook("fresh", "Fresh", "fresh.md");
     apiMock.importBook.mockResolvedValue(imported);
     const { container } = await renderApp();
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
 
     Object.defineProperty(input, "files", {
@@ -82,7 +87,9 @@ describe("App review fixes", () => {
     const { container } = await renderApp();
 
     expect(paragraphSelectors(container)).toHaveLength(2);
-    expect(paragraphSelectors(container)[0].getAttribute("aria-current")).toBe("true");
+    expect(paragraphSelectors(container)[0].getAttribute("aria-current")).toBe(
+      "true",
+    );
 
     await act(async () => {
       paragraphSelectors(container)[1].dispatchEvent(
@@ -94,19 +101,27 @@ describe("App review fixes", () => {
       );
     });
 
-    expect(paragraphSelectors(container)[1].getAttribute("aria-current")).toBe("true");
+    expect(paragraphSelectors(container)[1].getAttribute("aria-current")).toBe(
+      "true",
+    );
   });
 
   it("updates Chatterbox Turbo voice and prompt controls without reusing a stale event target", async () => {
     const { container } = await renderApp();
 
-    const engineSelect = controlByLabel<HTMLSelectElement>(container, "Narration source");
+    const engineSelect = controlByLabel<HTMLSelectElement>(
+      container,
+      "Narration source",
+    );
     engineSelect.value = "chatterbox_turbo";
     await act(async () => {
       engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    const voiceSelect = controlByLabel<HTMLSelectElement>(container, "Narrator");
+    const voiceSelect = controlByLabel<HTMLSelectElement>(
+      container,
+      "Narrator",
+    );
     voiceSelect.value = "reference";
     await act(async () => {
       voiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
@@ -143,13 +158,16 @@ describe("App review fixes", () => {
 
     const { container } = await renderApp();
 
-    expect(controlByLabel<HTMLSelectElement>(container, "Narration source").value).toBe(
-      "chatterbox_turbo",
+    expect(
+      controlByLabel<HTMLSelectElement>(container, "Narration source").value,
+    ).toBe("chatterbox_turbo");
+    expect(controlByLabel<HTMLSelectElement>(container, "Narrator").value).toBe(
+      "reference",
     );
-    expect(controlByLabel<HTMLSelectElement>(container, "Narrator").value).toBe("reference");
-    expect(controlByLabel<HTMLTextAreaElement>(container, "Narration guidance").value).toBe(
-      "[calm] ",
-    );
+    expect(
+      controlByLabel<HTMLTextAreaElement>(container, "Narration guidance")
+        .value,
+    ).toBe("[calm] ");
   });
 
   it("uses clear audiobook settings labels instead of fantasy config terms", async () => {
@@ -193,11 +211,9 @@ describe("App review fixes", () => {
       "Saved voice preset",
     );
 
-    expect(Array.from(presetSelect.options).map((option) => option.value)).toEqual([
-      "",
-      "fantasy",
-      "sci-fi",
-    ]);
+    expect(
+      Array.from(presetSelect.options).map((option) => option.value),
+    ).toEqual(["", "fantasy", "sci-fi"]);
 
     presetSelect.value = "fantasy";
     await act(async () => {
@@ -232,8 +248,12 @@ describe("App review fixes", () => {
 
     const player = container.querySelector(".themed-audio-player");
     expect(player).not.toBeNull();
-    expect(player?.querySelector('button[aria-label="Play sample"]')).not.toBeNull();
-    expect(player?.querySelector('input[aria-label="Sample playback position"]')).not.toBeNull();
+    expect(
+      player?.querySelector('button[aria-label="Play sample"]'),
+    ).not.toBeNull();
+    expect(
+      player?.querySelector('input[aria-label="Sample playback position"]'),
+    ).not.toBeNull();
 
     const audio = player?.querySelector("audio");
     expect(audio?.hasAttribute("controls")).toBe(false);
@@ -242,7 +262,9 @@ describe("App review fixes", () => {
 
   it("passes the selected reference audio start point when saving a custom style", async () => {
     const { container } = await renderApp();
-    const input = container.querySelector<HTMLInputElement>('input[accept*="audio"]');
+    const input = container.querySelector<HTMLInputElement>(
+      'input[accept*="audio"]',
+    );
     expect(input).not.toBeNull();
 
     Object.defineProperty(input, "files", {
@@ -279,7 +301,9 @@ describe("App review fixes", () => {
 
   it("clamps non-finite reference audio start points before saving", async () => {
     const { container } = await renderApp();
-    const input = container.querySelector<HTMLInputElement>('input[accept*="audio"]');
+    const input = container.querySelector<HTMLInputElement>(
+      'input[accept*="audio"]',
+    );
     expect(input).not.toBeNull();
 
     Object.defineProperty(input, "files", {
@@ -329,21 +353,24 @@ describe("App review fixes", () => {
 });
 
 function activeParagraphText(container: ParentNode): string | undefined {
-  return container.querySelector<HTMLTextAreaElement>(".markdown-paragraph-editor")?.value;
+  return container.querySelector<HTMLTextAreaElement>(
+    ".markdown-paragraph-editor",
+  )?.value;
 }
 
 function paragraphSelectors(container: ParentNode): HTMLElement[] {
   return Array.from(
-    container.querySelectorAll<HTMLElement>('[role="button"][aria-label^="Select paragraph"]'),
+    container.querySelectorAll<HTMLElement>(
+      '[role="button"][aria-label^="Select paragraph"]',
+    ),
   );
 }
 
-function controlByLabel<T extends HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-  container: ParentNode,
-  labelText: string,
-): T {
-  const label = Array.from(container.querySelectorAll("label")).find((candidate) =>
-    candidate.textContent?.includes(labelText),
+function controlByLabel<
+  T extends HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+>(container: ParentNode, labelText: string): T {
+  const label = Array.from(container.querySelectorAll("label")).find(
+    (candidate) => candidate.textContent?.includes(labelText),
   );
   const control = label?.querySelector("input, select, textarea");
   if (!control) {
@@ -353,18 +380,21 @@ function controlByLabel<T extends HTMLInputElement | HTMLSelectElement | HTMLTex
 }
 
 function buttonByText(container: ParentNode, text: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((candidate) =>
-    candidate.textContent?.includes(text),
-  );
+  const button = Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((candidate) => candidate.textContent?.includes(text));
   if (!button) {
     throw new Error(`Could not find button: ${text}`);
   }
   return button;
 }
 
-function detailsBySummary(container: ParentNode, text: string): HTMLDetailsElement {
-  const summary = Array.from(container.querySelectorAll("summary")).find((candidate) =>
-    candidate.textContent?.includes(text),
+function detailsBySummary(
+  container: ParentNode,
+  text: string,
+): HTMLDetailsElement {
+  const summary = Array.from(container.querySelectorAll("summary")).find(
+    (candidate) => candidate.textContent?.includes(text),
   );
   const details = summary?.closest("details");
   if (!details) {

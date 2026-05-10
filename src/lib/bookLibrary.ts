@@ -16,7 +16,11 @@ export interface LibraryImportPlan {
 }
 
 export type ImportBookFn = (file: File, title: string) => Promise<Book>;
-export type ImportProgressFn = (current: number, total: number, file: File) => void;
+export type ImportProgressFn = (
+  current: number,
+  total: number,
+  file: File,
+) => void;
 
 export const importedDocumentExtensionPattern =
   /\.(pdf|docx|pptx|xlsx|xls|epub|html?|txt|md|csv|json|xml)$/i;
@@ -78,7 +82,10 @@ export async function importBooksSequential(
   return { imported, failures };
 }
 
-export function mergeLibraryBooks(current: readonly Book[], incoming: readonly Book[]): Book[] {
+export function mergeLibraryBooks(
+  current: readonly Book[],
+  incoming: readonly Book[],
+): Book[] {
   const incomingIds = new Set(incoming.map((book) => book.id));
   return [...incoming, ...current.filter((book) => !incomingIds.has(book.id))];
 }

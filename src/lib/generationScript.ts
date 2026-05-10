@@ -1,6 +1,9 @@
 import type { Book, StyleOverride } from "../types";
 
-type ExportLocation = Pick<Location, "hostname" | "origin" | "port" | "protocol">;
+type ExportLocation = Pick<
+  Location,
+  "hostname" | "origin" | "port" | "protocol"
+>;
 
 interface GenerationScriptOptions {
   defaultApiUrl?: string;
@@ -14,7 +17,9 @@ interface GenerationRequestSnapshot {
 }
 
 export function selectedGenerationChapterIds(book: Book): string[] {
-  return book.chapters.filter((chapter) => chapter.selected).map((chapter) => chapter.id);
+  return book.chapters
+    .filter((chapter) => chapter.selected)
+    .map((chapter) => chapter.id);
 }
 
 export function buildBookPatchSnapshot(book: Book) {
@@ -27,13 +32,16 @@ export function buildBookPatchSnapshot(book: Book) {
       paragraphs: chapter.paragraphs.map((paragraph) => ({
         id: paragraph.id,
         text: paragraph.text,
-        included: paragraph.included
-      }))
-    }))
+        included: paragraph.included,
+      })),
+    })),
   };
 }
 
-export function buildGenerationRequestSnapshot(book: Book, style: StyleOverride): GenerationRequestSnapshot {
+export function buildGenerationRequestSnapshot(
+  book: Book,
+  style: StyleOverride,
+): GenerationRequestSnapshot {
   const chapterIds = selectedGenerationChapterIds(book);
   if (chapterIds.length === 0) {
     throw new Error("Select at least one chapter.");
@@ -43,15 +51,21 @@ export function buildGenerationRequestSnapshot(book: Book, style: StyleOverride)
     chapter_ids: chapterIds,
     style: {
       ...style,
-      style_id: style.style_id || "neutral"
+      style_id: style.style_id || "neutral",
     },
-    subtitle_source: "edited"
+    subtitle_source: "edited",
   };
 }
 
-export function buildGenerationScript(book: Book, style: StyleOverride, options: GenerationScriptOptions = {}): string {
+export function buildGenerationScript(
+  book: Book,
+  style: StyleOverride,
+  options: GenerationScriptOptions = {},
+): string {
   const generationRequest = buildGenerationRequestSnapshot(book, style);
-  const selectedChapters = book.chapters.filter((chapter) => generationRequest.chapter_ids.includes(chapter.id));
+  const selectedChapters = book.chapters.filter((chapter) =>
+    generationRequest.chapter_ids.includes(chapter.id),
+  );
   const metadata = {
     exported_at: options.exportedAt ?? new Date().toISOString(),
     book_id: book.id,
@@ -62,9 +76,11 @@ export function buildGenerationScript(book: Book, style: StyleOverride, options:
       id: chapter.id,
       index: chapter.index,
       title: chapter.title,
-      included_paragraphs: chapter.paragraphs.filter((paragraph) => paragraph.included).length
+      included_paragraphs: chapter.paragraphs.filter(
+        (paragraph) => paragraph.included,
+      ).length,
     })),
-    tts: generationRequest.style
+    tts: generationRequest.style,
   };
 
   const defaultApiUrl = options.defaultApiUrl ?? "http://127.0.0.1:8000";
@@ -252,7 +268,11 @@ if __name__ == "__main__":
 `;
 }
 
-export function downloadTextFile(filename: string, contents: string, mimeType: string): void {
+export function downloadTextFile(
+  filename: string,
+  contents: string,
+  mimeType: string,
+): void {
   const blob = new Blob([contents], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -264,12 +284,17 @@ export function downloadTextFile(filename: string, contents: string, mimeType: s
   URL.revokeObjectURL(url);
 }
 
-export function generationScriptFilename(book: Book, exportedAt: Date = new Date()): string {
+export function generationScriptFilename(
+  book: Book,
+  exportedAt: Date = new Date(),
+): string {
   const stamp = exportedAt.toISOString().replace(/[:.]/g, "-");
   return `whispbook-${safeFilenamePart(book.title)}-${stamp}.py`;
 }
 
-export function defaultBackendUrlFromLocation(location: ExportLocation): string {
+export function defaultBackendUrlFromLocation(
+  location: ExportLocation,
+): string {
   if (location.port === "5173") {
     return `${location.protocol}//${location.hostname}:8000`;
   }

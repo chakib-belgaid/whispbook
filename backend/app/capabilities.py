@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict
 
 from .models import EngineCapabilities, TTSOption, TTSVoiceOption
 
@@ -118,4 +118,3 @@ def tts_capabilities() -> Dict[str, EngineCapabilities]:
             languages=[TTSOption(value="en", label="English")],
         ),
     }
-

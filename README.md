@@ -1,5 +1,8 @@
 # Whispbook
 
+[![CI](https://github.com/chakib-belgaid/whispbook/actions/workflows/ci.yml/badge.svg)](https://github.com/chakib-belgaid/whispbook/actions/workflows/ci.yml)
+[![Release Validation](https://github.com/chakib-belgaid/whispbook/actions/workflows/release.yml/badge.svg)](https://github.com/chakib-belgaid/whispbook/actions/workflows/release.yml)
+
 Whispbook is a self-hosted audiobook studio for turning selectable-text documents into mobile-friendly audiobook files with chapter audio and subtitles.
 
 ## Features
@@ -72,6 +75,7 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
+
 ## Local Development
 
 Install frontend dependencies:
@@ -97,6 +101,23 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+## CI/CD
+
+Pull requests to `master` and pushes to `master` run the CI workflow with separate frontend and backend jobs. The frontend job checks formatting, lints, runs Vitest, and builds the Vite app. The backend job runs Ruff and the pytest suite through `uv` so logs point at either Python quality issues or failing tests.
+
+Release validation is intentionally separate from PR checks. It runs only for manual dispatches or version tags (`v*`) and adds a backend Docker image build on top of the normal frontend and backend validation.
+
+Run the same checks locally before publishing changes:
+
+```bash
+npm run format:check
+npm run lint
+npm test
+npm run build
+uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
+uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests
+```
 
 ## Document import
 

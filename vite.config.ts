@@ -7,14 +7,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     watch: {
-      ignored: ["**/.venv/**", "**/storage/**", "**/dist/**"]
+      ignored: ["**/.venv/**", "**/storage/**", "**/dist/**"],
     },
     proxy: {
       "/api": apiTarget,
-      "/media": apiTarget
-    }
+      "/media": apiTarget,
+    },
   },
   build: {
-    target: "es2022"
-  }
+    target: "es2022",
+  },
 });

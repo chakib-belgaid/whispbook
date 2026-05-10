@@ -366,7 +366,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => writeStoredStyleDraft(styleDraft), 250);
+    const timer = window.setTimeout(
+      () => writeStoredStyleDraft(styleDraft),
+      250,
+    );
     return () => window.clearTimeout(timer);
   }, [styleDraft]);
 
@@ -950,657 +953,685 @@ function App() {
 
       {book && (
         <>
-        <nav className="pane-switcher" aria-label="Workspace panes">
-          <button
-            className={activePane === "book" ? "pane-tab is-active" : "pane-tab"}
-            type="button"
-            aria-pressed={activePane === "book"}
-            onClick={() => setActivePane("book")}
-          >
-            <BookOpen size={17} aria-hidden="true" />
-            <span>Book</span>
-          </button>
-          <button
-            className={
-              activePane === "manuscript" ? "pane-tab is-active" : "pane-tab"
-            }
-            type="button"
-            aria-pressed={activePane === "manuscript"}
-            onClick={() => setActivePane("manuscript")}
-          >
-            <FileText size={17} aria-hidden="true" />
-            <span>Manuscript</span>
-          </button>
-          <button
-            className={
-              activePane === "render" ? "pane-tab is-active" : "pane-tab"
-            }
-            type="button"
-            aria-pressed={activePane === "render"}
-            onClick={() => setActivePane("render")}
-          >
-            <FileAudio size={17} aria-hidden="true" />
-            <span>Audiobook</span>
-          </button>
-        </nav>
-
-        <section
-          className="workspace"
-          aria-label="Whispbook manuscript workstation"
-        >
-          <div
-            className={
-              activePane === "book"
-                ? "workspace-zone book-zone is-mobile-active"
-                : "workspace-zone book-zone"
-            }
-          >
-            <div className="zone-backdrop" aria-hidden="true" />
-            <div className="zone-overlay" aria-hidden="true" />
-            <aside
-              className="chapter-panel book-cover zone-content"
-              aria-label="Book and chapters"
+          <nav className="pane-switcher" aria-label="Workspace panes">
+            <button
+              className={
+                activePane === "book" ? "pane-tab is-active" : "pane-tab"
+              }
+              type="button"
+              aria-pressed={activePane === "book"}
+              onClick={() => setActivePane("book")}
             >
-            <div className="sidebar-brand">
-              <Feather size={38} aria-hidden="true" />
-              <div>
-                <h1>Whispbook</h1>
-                <p>Audiobook Alchemy</p>
-              </div>
-            </div>
-
-            <div className="sidebar-actions">
-              <button
-                className="primary-action upload-action"
-                type="button"
-                disabled={Boolean(busy)}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <FileUp size={18} />
-                <span>
-                  {isImporting ? busy : "Upload Book"}
-                </span>
-              </button>
-              <button
-                className="secondary-action"
-                type="button"
-                disabled={!dirty || Boolean(busy)}
-                onClick={() => void persistBook()}
-              >
-                <Save size={18} />
-                <span>{dirty ? "Save Edits" : "Saved"}</span>
-              </button>
-            </div>
-
-            <label className="field book-title-field">
+              <BookOpen size={17} aria-hidden="true" />
               <span>Book</span>
-              <span className="book-title-control">
-                <BookOpen size={21} aria-hidden="true" />
-                <input
-                  value={book.title}
-                  onChange={(event) =>
-                    updateBookTitle(event.currentTarget.value)
-                  }
-                />
-              </span>
-            </label>
-            {books.length > 1 && (
-              <label className="field book-switch-field">
-                <span>Library</span>
-                <select
-                  value={book.id}
-                  onChange={(event) =>
-                    requestBookSwitch(event.currentTarget.value)
-                  }
-                >
-                  {books.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            <div className="panel-heading chapter-heading">
-              <div>
-                <h2>Chapters</h2>
-                <span>{includedChapters.length} selected</span>
-              </div>
-              <label className="select-all-field">
-                <input
-                  ref={selectAllCheckboxRef}
-                  type="checkbox"
-                  checked={allChaptersSelected}
-                  disabled={!book.chapters.length}
-                  onChange={(event) =>
-                    setAllChaptersSelected(event.currentTarget.checked)
-                  }
-                />
-                <span>Select all</span>
-              </label>
-            </div>
-
-            <div className="chapter-list">
-              {book.chapters.map((chapter) => (
-                <ChapterRow
-                  key={chapter.id}
-                  chapter={chapter}
-                  active={chapter.id === activeChapter?.id}
-                  job={job}
-                  onOpen={() => {
-                    setActiveChapterId(chapter.id);
-                    setSelectedParagraphId(
-                      chapter.paragraphs.find((paragraph) => paragraph.included)
-                        ?.id ??
-                        chapter.paragraphs[0]?.id ??
-                        null,
-                    );
-                    setActivePane("manuscript");
-                  }}
-                  onToggle={(selected) =>
-                    updateChapter(chapter.id, (current) => ({
-                      ...current,
-                      selected,
-                    }))
-                  }
-                />
-              ))}
-            </div>
-            </aside>
-          </div>
-
-          <div
-            className={
-              activePane === "manuscript"
-                ? "workspace-zone manuscript-zone is-mobile-active"
-                : "workspace-zone manuscript-zone"
-            }
-          >
-            <div className="zone-backdrop" aria-hidden="true" />
-            <div className="zone-overlay" aria-hidden="true" />
-            <section
-              className="editor-panel manuscript-stage zone-content"
-              aria-label="Manuscript workspace"
+            </button>
+            <button
+              className={
+                activePane === "manuscript" ? "pane-tab is-active" : "pane-tab"
+              }
+              type="button"
+              aria-pressed={activePane === "manuscript"}
+              onClick={() => setActivePane("manuscript")}
             >
-            {activeChapter && (
-              <>
-                <div className="manuscript-page">
-                  <ManuscriptControls
-                    busy={busy}
-                    dirty={dirty}
-                    canUndo={canUndoChapter}
-                    canRedo={canRedoChapter}
-                    onUndo={undoActiveChapter}
-                    onRedo={redoActiveChapter}
-                    onSave={() => void persistBook()}
-                  />
-                  <label className="markdown-heading">
-                    <span aria-hidden="true">#</span>
-                    <input
-                      aria-label="Chapter markdown heading"
-                      spellCheck={false}
-                      value={activeChapter.title}
-                      onChange={(event) => {
-                        const title = event.currentTarget.value;
-                        updateChapter(activeChapter.id, (current) => ({
-                          ...current,
-                          title,
-                        }));
-                      }}
-                    />
-                  </label>
-                  <div className="paragraph-list manuscript-flow markdown-flow">
-                    {activeChapter.paragraphs.map((paragraph) => (
-                      <article
-                        key={paragraph.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Select paragraph ${paragraph.index + 1}`}
-                        aria-current={
-                          paragraph.id === selectedParagraph?.id
-                            ? "true"
-                            : undefined
-                        }
-                        className={
-                          paragraph.id === selectedParagraph?.id
-                            ? "paragraph-block is-selected"
-                            : "paragraph-block"
-                        }
-                        onClick={() => setSelectedParagraphId(paragraph.id)}
-                        onKeyDown={(event) => {
-                          if (event.target !== event.currentTarget) {
-                            return;
-                          }
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setSelectedParagraphId(paragraph.id);
-                          }
-                        }}
-                      >
-                        <label
-                          className="paragraph-number"
-                          aria-label={`Include paragraph ${paragraph.index + 1}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={paragraph.included}
-                            onChange={(event) => {
-                              const included = event.currentTarget.checked;
-                              updateParagraph(
-                                activeChapter.id,
-                                paragraph.id,
-                                (current) => ({ ...current, included }),
-                              );
-                            }}
-                            onClick={(event) => event.stopPropagation()}
-                          />
-                          <span>{formatParagraphNumber(paragraph.index)}</span>
-                        </label>
-                        <div className="paragraph-copy">
-                          <textarea
-                            className="markdown-paragraph-editor"
-                            value={paragraph.text}
-                            disabled={!paragraph.included}
-                            spellCheck={false}
-                            rows={Math.max(
-                              1,
-                              Math.min(
-                                8,
-                                Math.ceil(paragraph.text.length / 88),
-                              ),
-                            )}
-                            onFocus={() => setSelectedParagraphId(paragraph.id)}
-                            onChange={(event) => {
-                              const text = event.currentTarget.value;
-                              updateParagraph(
-                                activeChapter.id,
-                                paragraph.id,
-                                (current) => ({ ...current, text }),
-                              );
-                            }}
-                          />
-                        </div>
-                        {paragraph.id === selectedParagraph?.id && (
-                          <div
-                            className="selected-paragraph-toolbar"
-                            aria-label="Selected paragraph actions"
-                          >
-                            <button
-                              type="button"
-                              aria-label="Preview paragraph"
-                              title="Preview paragraph"
-                              disabled={Boolean(busy)}
-                              onClick={() => void handlePreview()}
-                            >
-                              <Play size={17} />
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Remove paragraph"
-                              title="Remove paragraph"
-                              onClick={() =>
-                                updateParagraph(
-                                  activeChapter.id,
-                                  paragraph.id,
-                                  (current) => ({
-                                    ...current,
-                                    included: false,
-                                  }),
-                                )
-                              }
-                            >
-                              <Trash2 size={17} />
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Mark paragraph"
-                              title="Mark paragraph"
-                              onClick={() =>
-                                updateParagraph(
-                                  activeChapter.id,
-                                  paragraph.id,
-                                  (current) => ({ ...current, included: true }),
-                                )
-                              }
-                            >
-                              <Bookmark size={17} />
-                            </button>
-                          </div>
-                        )}
-                      </article>
-                    ))}
+              <FileText size={17} aria-hidden="true" />
+              <span>Manuscript</span>
+            </button>
+            <button
+              className={
+                activePane === "render" ? "pane-tab is-active" : "pane-tab"
+              }
+              type="button"
+              aria-pressed={activePane === "render"}
+              onClick={() => setActivePane("render")}
+            >
+              <FileAudio size={17} aria-hidden="true" />
+              <span>Audiobook</span>
+            </button>
+          </nav>
+
+          <section
+            className="workspace"
+            aria-label="Whispbook manuscript workstation"
+          >
+            <div
+              className={
+                activePane === "book"
+                  ? "workspace-zone book-zone is-mobile-active"
+                  : "workspace-zone book-zone"
+              }
+            >
+              <div className="zone-backdrop" aria-hidden="true" />
+              <div className="zone-overlay" aria-hidden="true" />
+              <aside
+                className="chapter-panel book-cover zone-content"
+                aria-label="Book and chapters"
+              >
+                <div className="sidebar-brand">
+                  <Feather size={38} aria-hidden="true" />
+                  <div>
+                    <h1>Whispbook</h1>
+                    <p>Audiobook Alchemy</p>
                   </div>
                 </div>
-              </>
-            )}
-            </section>
-          </div>
 
-          <div
-            className={
-              activePane === "render"
-                ? "workspace-zone controls-zone is-mobile-active"
-                : "workspace-zone controls-zone"
-            }
-          >
-            <div className="zone-backdrop" aria-hidden="true" />
-            <div className="zone-overlay" aria-hidden="true" />
-            <aside
-              className="render-panel settings-scroll zone-content"
-              aria-label="Audiobook settings"
-            >
-            <section className="settings-section ritual-section custom-style-section">
-              <div className="settings-heading">
-                <Wand2 size={19} aria-hidden="true" />
-                <h2>Voice presets</h2>
-              </div>
-              {voicePresetStyles.length > 0 && (
-                <SelectField
-                  label="Saved voice preset"
-                  value={
-                    voicePresetStyles.some((style) => style.id === styleDraft.style_id)
-                      ? styleDraft.style_id
-                      : ""
-                  }
-                  onChange={(styleId) => {
-                    if (!styleId) {
-                      setStyleDraft((current) => ({
-                        ...current,
-                        style_id: "",
-                      }));
-                      setPreviewUrl(null);
-                      return;
-                    }
-                    const next = voicePresetStyles.find(
-                      (style) => style.id === styleId,
-                    );
-                    if (next) {
-                      setStyleDraft(
-                        normalizeStyleDraft(styleToDraft(next), capabilities),
-                      );
-                      setPreviewUrl(null);
-                    }
-                  }}
-                >
-                  <option value="">Current settings</option>
-                  {voicePresetStyles.map((style) => (
-                    <option key={style.id} value={style.id}>
-                      {style.name}
-                    </option>
-                  ))}
-                </SelectField>
-              )}
-              <div className="style-import-row">
-                <input
-                  ref={styleReferenceRef}
-                  className="visually-hidden"
-                  type="file"
-                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.json,.whisp"
-                  onChange={(event) =>
-                    void handleStyleImport(event.currentTarget.files)
-                  }
-                />
-                <button
-                  className="secondary-action"
-                  type="button"
-                  onClick={() => styleReferenceRef.current?.click()}
-                >
-                  <Upload size={18} />
-                  <span>Import voice style</span>
-                </button>
-                <small>JSON, .whisp, or audio file.</small>
-              </div>
-              {(customReference || customName.trim()) && (
-                <RitualDrawer
-                  title="Custom voice details"
-                  className="advanced-style"
-                >
-                  <div className="control-grid">
-                    <label className="field style-name-field">
-                      <span>Voice style name</span>
-                      <input
-                        placeholder="Custom style name"
-                        value={customName}
-                        onChange={(event) =>
-                          setCustomName(event.currentTarget.value)
-                        }
-                      />
-                    </label>
-                    <SelectField
-                      label="Narration source"
-                      value={customEngine}
-                      onChange={(value) => setCustomEngine(value as EngineName)}
-                    >
-                      <option value="chatterbox">Chatterbox</option>
-                      <option value="chatterbox_turbo">Chatterbox Turbo</option>
-                      <option value="kokoro">Kokoro</option>
-                    </SelectField>
-                    {customReference && (
-                      <label className="field">
-                        <span>Sample start (seconds)</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={customReferenceStartSeconds}
-                          onChange={(event) =>
-                            updateCustomReferenceStartSeconds(
-                              event.currentTarget.value,
-                            )
-                          }
-                        />
-                      </label>
-                    )}
-                    <label className="field">
-                      <span>Style options</span>
-                      <textarea
-                        rows={3}
-                        value={customParams}
-                        onChange={(event) =>
-                          setCustomParams(event.currentTarget.value)
-                        }
-                      />
-                    </label>
-                  </div>
+                <div className="sidebar-actions">
+                  <button
+                    className="primary-action upload-action"
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <FileUp size={18} />
+                    <span>{isImporting ? busy : "Upload Book"}</span>
+                  </button>
                   <button
                     className="secondary-action"
                     type="button"
-                    disabled={Boolean(busy)}
-                    onClick={() => void handleCustomStyle()}
+                    disabled={!dirty || Boolean(busy)}
+                    onClick={() => void persistBook()}
                   >
-                    <Check size={18} />
-                    <span>Save voice style</span>
+                    <Save size={18} />
+                    <span>{dirty ? "Save Edits" : "Saved"}</span>
                   </button>
-                </RitualDrawer>
-              )}
-            </section>
+                </div>
 
-            <section className="settings-section ritual-section narrator-section">
-              <div className="settings-heading">
-                <Mic2 size={19} aria-hidden="true" />
-                <h2>Narrator</h2>
-              </div>
-              <SelectField
-                label="Narration source"
-                value={styleDraft.engine ?? "kokoro"}
-                onChange={(value) => {
-                  const engine = value as EngineName;
-                  setStyleDraft((current) =>
-                    normalizeStyleDraft({ ...current, engine }, capabilities),
-                  );
-                }}
-              >
-                <option value="kokoro">Kokoro</option>
-                <option value="chatterbox">Chatterbox</option>
-                <option value="chatterbox_turbo">Chatterbox Turbo</option>
-              </SelectField>
-              <SelectField
-                label="Narrator"
-                value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
-                disabled={voiceOptions.length === 0}
-                onChange={(voice) =>
-                  setStyleDraft((current) => ({
-                    ...current,
-                    voice,
-                  }))
-                }
-              >
-                {voiceOptions.map((voice) => (
-                  <option key={voice.value} value={voice.value}>
-                    {voice.label} ({voice.value})
-                  </option>
-                ))}
-              </SelectField>
-              {activeEngineSettings.language && (
-                <SelectField
-                  label="Language"
-                  value={styleDraft.language ?? languageOptions[0]?.value ?? ""}
-                  disabled={languageOptions.length === 0}
-                  onChange={(language) =>
-                    setStyleDraft((current) =>
-                      normalizeStyleDraft(
-                        { ...current, language },
-                        capabilities,
-                      ),
-                    )
-                  }
-                >
-                  {languageOptions.map((language) => (
-                    <option key={language.value} value={language.value}>
-                      {language.label}
-                    </option>
-                  ))}
-                </SelectField>
-              )}
-            </section>
+                <label className="field book-title-field">
+                  <span>Book</span>
+                  <span className="book-title-control">
+                    <BookOpen size={21} aria-hidden="true" />
+                    <input
+                      value={book.title}
+                      onChange={(event) =>
+                        updateBookTitle(event.currentTarget.value)
+                      }
+                    />
+                  </span>
+                </label>
+                {books.length > 1 && (
+                  <label className="field book-switch-field">
+                    <span>Library</span>
+                    <select
+                      value={book.id}
+                      onChange={(event) =>
+                        requestBookSwitch(event.currentTarget.value)
+                      }
+                    >
+                      {books.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
-            <section className="settings-section ritual-section rune-section">
-              <div className="settings-heading">
-                <Clock3 size={19} aria-hidden="true" />
-                <h2>Voice fine-tuning</h2>
-              </div>
-              <RitualDrawer title="Voice fine-tuning">
-                <div className="control-grid">
-                  {activeEngineSettings.promptPrefix && (
-                    <label className="field tts-prompt-field">
-                      <span>Narration guidance</span>
-                      <textarea
-                        rows={3}
-                        value={styleDraft.prompt_prefix ?? ""}
-                        onChange={(event) => {
-                          const promptPrefix = event.currentTarget.value;
-                          setStyleDraft((current) => ({
-                            ...current,
-                            prompt_prefix: promptPrefix,
-                          }));
-                        }}
-                      />
-                    </label>
-                  )}
-                  {activeEngineSettings.ranges.map((control) => (
-                    <RangeControl
-                      key={control.key}
-                      label={control.label}
-                      value={styleDraft[control.key] ?? control.defaultValue}
-                      min={control.min}
-                      max={control.max}
-                      step={control.step}
-                      suffix={control.suffix}
-                      onChange={(value) =>
-                        setStyleDraft((current) => ({
+                <div className="panel-heading chapter-heading">
+                  <div>
+                    <h2>Chapters</h2>
+                    <span>{includedChapters.length} selected</span>
+                  </div>
+                  <label className="select-all-field">
+                    <input
+                      ref={selectAllCheckboxRef}
+                      type="checkbox"
+                      checked={allChaptersSelected}
+                      disabled={!book.chapters.length}
+                      onChange={(event) =>
+                        setAllChaptersSelected(event.currentTarget.checked)
+                      }
+                    />
+                    <span>Select all</span>
+                  </label>
+                </div>
+
+                <div className="chapter-list">
+                  {book.chapters.map((chapter) => (
+                    <ChapterRow
+                      key={chapter.id}
+                      chapter={chapter}
+                      active={chapter.id === activeChapter?.id}
+                      job={job}
+                      onOpen={() => {
+                        setActiveChapterId(chapter.id);
+                        setSelectedParagraphId(
+                          chapter.paragraphs.find(
+                            (paragraph) => paragraph.included,
+                          )?.id ??
+                            chapter.paragraphs[0]?.id ??
+                            null,
+                        );
+                        setActivePane("manuscript");
+                      }}
+                      onToggle={(selected) =>
+                        updateChapter(chapter.id, (current) => ({
                           ...current,
-                          [control.key]: value,
+                          selected,
                         }))
                       }
                     />
                   ))}
                 </div>
-              </RitualDrawer>
-            </section>
+              </aside>
+            </div>
 
-            <section className="settings-section output-section">
-              <div className="settings-heading">
-                <FileAudio size={19} aria-hidden="true" />
-                <h2>Output</h2>
-              </div>
-              <div className="output-actions">
-                <button
-                  className="secondary-action"
-                  type="button"
-                  disabled={!selectedParagraph || Boolean(busy)}
-                  onClick={() => void handlePreview()}
-                >
-                  <Play size={18} />
-                  <span>
-                    {busy === "Previewing" ? "Creating sample" : "Listen to sample"}
-                  </span>
-                </button>
-                <button
-                  className="secondary-action"
-                  type="button"
-                  disabled={!book || noChaptersSelected}
-                  onClick={handleExportScript}
-                >
-                  <FileText size={18} />
-                  <span>Export script</span>
-                </button>
-                <button
-                  className="generate-action"
-                  type="button"
-                  disabled={!book || Boolean(busy)}
-                  onClick={() => void handleGenerate()}
-                >
-                  <Sparkles size={20} />
-                  <span>
-                    {busy === "Starting" ? "Starting" : "Create audiobook"}
-                  </span>
-                  <ChevronRight size={20} />
-                </button>
-              </div>
-              {previewUrl && (
-                <div className="audio-result">
-                  <ThemedAudioPlayer src={mediaUrl(previewUrl)} />
-                </div>
-              )}
-            </section>
-
-            {job && (
+            <div
+              className={
+                activePane === "manuscript"
+                  ? "workspace-zone manuscript-zone is-mobile-active"
+                  : "workspace-zone manuscript-zone"
+              }
+            >
+              <div className="zone-backdrop" aria-hidden="true" />
+              <div className="zone-overlay" aria-hidden="true" />
               <section
-                className="settings-section job-panel"
-                aria-live="polite"
+                className="editor-panel manuscript-stage zone-content"
+                aria-label="Manuscript workspace"
               >
-                <div className="panel-heading">
-                  <h2>Audiobook progress</h2>
-                  <span>{Math.round(job.progress)}%</span>
-                </div>
-                <div className="progress-bar" aria-hidden="true">
-                  <span style={{ width: `${Math.max(1, job.progress)}%` }} />
-                </div>
-                <p
-                  className={
-                    job.status === "error"
-                      ? "job-message is-error"
-                      : "job-message"
-                  }
-                >
-                  {job.error ?? job.message}
-                </p>
-                <div className="job-chapters">
-                  {job.chapters.map((chapter) => (
-                    <div key={chapter.chapter_id} className="job-chapter">
-                      <span>{chapter.title}</span>
-                      <StatusBadge status={chapter.status} />
+                {activeChapter && (
+                  <>
+                    <div className="manuscript-page">
+                      <ManuscriptControls
+                        busy={busy}
+                        dirty={dirty}
+                        canUndo={canUndoChapter}
+                        canRedo={canRedoChapter}
+                        onUndo={undoActiveChapter}
+                        onRedo={redoActiveChapter}
+                        onSave={() => void persistBook()}
+                      />
+                      <label className="markdown-heading">
+                        <span aria-hidden="true">#</span>
+                        <input
+                          aria-label="Chapter markdown heading"
+                          spellCheck={false}
+                          value={activeChapter.title}
+                          onChange={(event) => {
+                            const title = event.currentTarget.value;
+                            updateChapter(activeChapter.id, (current) => ({
+                              ...current,
+                              title,
+                            }));
+                          }}
+                        />
+                      </label>
+                      <div className="paragraph-list manuscript-flow markdown-flow">
+                        {activeChapter.paragraphs.map((paragraph) => (
+                          <article
+                            key={paragraph.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Select paragraph ${paragraph.index + 1}`}
+                            aria-current={
+                              paragraph.id === selectedParagraph?.id
+                                ? "true"
+                                : undefined
+                            }
+                            className={
+                              paragraph.id === selectedParagraph?.id
+                                ? "paragraph-block is-selected"
+                                : "paragraph-block"
+                            }
+                            onClick={() => setSelectedParagraphId(paragraph.id)}
+                            onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) {
+                                return;
+                              }
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setSelectedParagraphId(paragraph.id);
+                              }
+                            }}
+                          >
+                            <label
+                              className="paragraph-number"
+                              aria-label={`Include paragraph ${paragraph.index + 1}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={paragraph.included}
+                                onChange={(event) => {
+                                  const included = event.currentTarget.checked;
+                                  updateParagraph(
+                                    activeChapter.id,
+                                    paragraph.id,
+                                    (current) => ({ ...current, included }),
+                                  );
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                              <span>
+                                {formatParagraphNumber(paragraph.index)}
+                              </span>
+                            </label>
+                            <div className="paragraph-copy">
+                              <textarea
+                                className="markdown-paragraph-editor"
+                                value={paragraph.text}
+                                disabled={!paragraph.included}
+                                spellCheck={false}
+                                rows={Math.max(
+                                  1,
+                                  Math.min(
+                                    8,
+                                    Math.ceil(paragraph.text.length / 88),
+                                  ),
+                                )}
+                                onFocus={() =>
+                                  setSelectedParagraphId(paragraph.id)
+                                }
+                                onChange={(event) => {
+                                  const text = event.currentTarget.value;
+                                  updateParagraph(
+                                    activeChapter.id,
+                                    paragraph.id,
+                                    (current) => ({ ...current, text }),
+                                  );
+                                }}
+                              />
+                            </div>
+                            {paragraph.id === selectedParagraph?.id && (
+                              <div
+                                className="selected-paragraph-toolbar"
+                                aria-label="Selected paragraph actions"
+                              >
+                                <button
+                                  type="button"
+                                  aria-label="Preview paragraph"
+                                  title="Preview paragraph"
+                                  disabled={Boolean(busy)}
+                                  onClick={() => void handlePreview()}
+                                >
+                                  <Play size={17} />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Remove paragraph"
+                                  title="Remove paragraph"
+                                  onClick={() =>
+                                    updateParagraph(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      (current) => ({
+                                        ...current,
+                                        included: false,
+                                      }),
+                                    )
+                                  }
+                                >
+                                  <Trash2 size={17} />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Mark paragraph"
+                                  title="Mark paragraph"
+                                  onClick={() =>
+                                    updateParagraph(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      (current) => ({
+                                        ...current,
+                                        included: true,
+                                      }),
+                                    )
+                                  }
+                                >
+                                  <Bookmark size={17} />
+                                </button>
+                              </div>
+                            )}
+                          </article>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  </>
+                )}
               </section>
-            )}
+            </div>
 
-            <Downloads book={book} />
-            </aside>
-          </div>
-        </section>
+            <div
+              className={
+                activePane === "render"
+                  ? "workspace-zone controls-zone is-mobile-active"
+                  : "workspace-zone controls-zone"
+              }
+            >
+              <div className="zone-backdrop" aria-hidden="true" />
+              <div className="zone-overlay" aria-hidden="true" />
+              <aside
+                className="render-panel settings-scroll zone-content"
+                aria-label="Audiobook settings"
+              >
+                <section className="settings-section ritual-section custom-style-section">
+                  <div className="settings-heading">
+                    <Wand2 size={19} aria-hidden="true" />
+                    <h2>Voice presets</h2>
+                  </div>
+                  {voicePresetStyles.length > 0 && (
+                    <SelectField
+                      label="Saved voice preset"
+                      value={
+                        voicePresetStyles.some(
+                          (style) => style.id === styleDraft.style_id,
+                        )
+                          ? styleDraft.style_id
+                          : ""
+                      }
+                      onChange={(styleId) => {
+                        if (!styleId) {
+                          setStyleDraft((current) => ({
+                            ...current,
+                            style_id: "",
+                          }));
+                          setPreviewUrl(null);
+                          return;
+                        }
+                        const next = voicePresetStyles.find(
+                          (style) => style.id === styleId,
+                        );
+                        if (next) {
+                          setStyleDraft(
+                            normalizeStyleDraft(
+                              styleToDraft(next),
+                              capabilities,
+                            ),
+                          );
+                          setPreviewUrl(null);
+                        }
+                      }}
+                    >
+                      <option value="">Current settings</option>
+                      {voicePresetStyles.map((style) => (
+                        <option key={style.id} value={style.id}>
+                          {style.name}
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+                  <div className="style-import-row">
+                    <input
+                      ref={styleReferenceRef}
+                      className="visually-hidden"
+                      type="file"
+                      accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.json,.whisp"
+                      onChange={(event) =>
+                        void handleStyleImport(event.currentTarget.files)
+                      }
+                    />
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={() => styleReferenceRef.current?.click()}
+                    >
+                      <Upload size={18} />
+                      <span>Import voice style</span>
+                    </button>
+                    <small>JSON, .whisp, or audio file.</small>
+                  </div>
+                  {(customReference || customName.trim()) && (
+                    <RitualDrawer
+                      title="Custom voice details"
+                      className="advanced-style"
+                    >
+                      <div className="control-grid">
+                        <label className="field style-name-field">
+                          <span>Voice style name</span>
+                          <input
+                            placeholder="Custom style name"
+                            value={customName}
+                            onChange={(event) =>
+                              setCustomName(event.currentTarget.value)
+                            }
+                          />
+                        </label>
+                        <SelectField
+                          label="Narration source"
+                          value={customEngine}
+                          onChange={(value) =>
+                            setCustomEngine(value as EngineName)
+                          }
+                        >
+                          <option value="chatterbox">Chatterbox</option>
+                          <option value="chatterbox_turbo">
+                            Chatterbox Turbo
+                          </option>
+                          <option value="kokoro">Kokoro</option>
+                        </SelectField>
+                        {customReference && (
+                          <label className="field">
+                            <span>Sample start (seconds)</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={customReferenceStartSeconds}
+                              onChange={(event) =>
+                                updateCustomReferenceStartSeconds(
+                                  event.currentTarget.value,
+                                )
+                              }
+                            />
+                          </label>
+                        )}
+                        <label className="field">
+                          <span>Style options</span>
+                          <textarea
+                            rows={3}
+                            value={customParams}
+                            onChange={(event) =>
+                              setCustomParams(event.currentTarget.value)
+                            }
+                          />
+                        </label>
+                      </div>
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => void handleCustomStyle()}
+                      >
+                        <Check size={18} />
+                        <span>Save voice style</span>
+                      </button>
+                    </RitualDrawer>
+                  )}
+                </section>
+
+                <section className="settings-section ritual-section narrator-section">
+                  <div className="settings-heading">
+                    <Mic2 size={19} aria-hidden="true" />
+                    <h2>Narrator</h2>
+                  </div>
+                  <SelectField
+                    label="Narration source"
+                    value={styleDraft.engine ?? "kokoro"}
+                    onChange={(value) => {
+                      const engine = value as EngineName;
+                      setStyleDraft((current) =>
+                        normalizeStyleDraft(
+                          { ...current, engine },
+                          capabilities,
+                        ),
+                      );
+                    }}
+                  >
+                    <option value="kokoro">Kokoro</option>
+                    <option value="chatterbox">Chatterbox</option>
+                    <option value="chatterbox_turbo">Chatterbox Turbo</option>
+                  </SelectField>
+                  <SelectField
+                    label="Narrator"
+                    value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
+                    disabled={voiceOptions.length === 0}
+                    onChange={(voice) =>
+                      setStyleDraft((current) => ({
+                        ...current,
+                        voice,
+                      }))
+                    }
+                  >
+                    {voiceOptions.map((voice) => (
+                      <option key={voice.value} value={voice.value}>
+                        {voice.label} ({voice.value})
+                      </option>
+                    ))}
+                  </SelectField>
+                  {activeEngineSettings.language && (
+                    <SelectField
+                      label="Language"
+                      value={
+                        styleDraft.language ?? languageOptions[0]?.value ?? ""
+                      }
+                      disabled={languageOptions.length === 0}
+                      onChange={(language) =>
+                        setStyleDraft((current) =>
+                          normalizeStyleDraft(
+                            { ...current, language },
+                            capabilities,
+                          ),
+                        )
+                      }
+                    >
+                      {languageOptions.map((language) => (
+                        <option key={language.value} value={language.value}>
+                          {language.label}
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+                </section>
+
+                <section className="settings-section ritual-section rune-section">
+                  <div className="settings-heading">
+                    <Clock3 size={19} aria-hidden="true" />
+                    <h2>Voice fine-tuning</h2>
+                  </div>
+                  <RitualDrawer title="Voice fine-tuning">
+                    <div className="control-grid">
+                      {activeEngineSettings.promptPrefix && (
+                        <label className="field tts-prompt-field">
+                          <span>Narration guidance</span>
+                          <textarea
+                            rows={3}
+                            value={styleDraft.prompt_prefix ?? ""}
+                            onChange={(event) => {
+                              const promptPrefix = event.currentTarget.value;
+                              setStyleDraft((current) => ({
+                                ...current,
+                                prompt_prefix: promptPrefix,
+                              }));
+                            }}
+                          />
+                        </label>
+                      )}
+                      {activeEngineSettings.ranges.map((control) => (
+                        <RangeControl
+                          key={control.key}
+                          label={control.label}
+                          value={
+                            styleDraft[control.key] ?? control.defaultValue
+                          }
+                          min={control.min}
+                          max={control.max}
+                          step={control.step}
+                          suffix={control.suffix}
+                          onChange={(value) =>
+                            setStyleDraft((current) => ({
+                              ...current,
+                              [control.key]: value,
+                            }))
+                          }
+                        />
+                      ))}
+                    </div>
+                  </RitualDrawer>
+                </section>
+
+                <section className="settings-section output-section">
+                  <div className="settings-heading">
+                    <FileAudio size={19} aria-hidden="true" />
+                    <h2>Output</h2>
+                  </div>
+                  <div className="output-actions">
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      disabled={!selectedParagraph || Boolean(busy)}
+                      onClick={() => void handlePreview()}
+                    >
+                      <Play size={18} />
+                      <span>
+                        {busy === "Previewing"
+                          ? "Creating sample"
+                          : "Listen to sample"}
+                      </span>
+                    </button>
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      disabled={!book || noChaptersSelected}
+                      onClick={handleExportScript}
+                    >
+                      <FileText size={18} />
+                      <span>Export script</span>
+                    </button>
+                    <button
+                      className="generate-action"
+                      type="button"
+                      disabled={!book || Boolean(busy)}
+                      onClick={() => void handleGenerate()}
+                    >
+                      <Sparkles size={20} />
+                      <span>
+                        {busy === "Starting" ? "Starting" : "Create audiobook"}
+                      </span>
+                      <ChevronRight size={20} />
+                    </button>
+                  </div>
+                  {previewUrl && (
+                    <div className="audio-result">
+                      <ThemedAudioPlayer src={mediaUrl(previewUrl)} />
+                    </div>
+                  )}
+                </section>
+
+                {job && (
+                  <section
+                    className="settings-section job-panel"
+                    aria-live="polite"
+                  >
+                    <div className="panel-heading">
+                      <h2>Audiobook progress</h2>
+                      <span>{Math.round(job.progress)}%</span>
+                    </div>
+                    <div className="progress-bar" aria-hidden="true">
+                      <span
+                        style={{ width: `${Math.max(1, job.progress)}%` }}
+                      />
+                    </div>
+                    <p
+                      className={
+                        job.status === "error"
+                          ? "job-message is-error"
+                          : "job-message"
+                      }
+                    >
+                      {job.error ?? job.message}
+                    </p>
+                    <div className="job-chapters">
+                      {job.chapters.map((chapter) => (
+                        <div key={chapter.chapter_id} className="job-chapter">
+                          <span>{chapter.title}</span>
+                          <StatusBadge status={chapter.status} />
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                <Downloads book={book} />
+              </aside>
+            </div>
+          </section>
         </>
       )}
 
@@ -1744,7 +1775,8 @@ function ThemedAudioPlayer({ src }: { src: string }) {
     setIsMuted(audio.muted);
   }
 
-  const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const progress =
+    duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const rangeStyle = {
     "--audio-progress": `${progress}%`,
   } as CSSProperties;
@@ -1769,7 +1801,11 @@ function ThemedAudioPlayer({ src }: { src: string }) {
         aria-label={isPlaying ? "Pause sample" : "Play sample"}
         onClick={() => void togglePlayback()}
       >
-        {isPlaying ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+        {isPlaying ? (
+          <Pause size={16} aria-hidden="true" />
+        ) : (
+          <Play size={16} aria-hidden="true" />
+        )}
       </button>
       <span className="player-time">
         {formatAudioTime(currentTime)} / {formatAudioTime(duration)}
@@ -1792,7 +1828,11 @@ function ThemedAudioPlayer({ src }: { src: string }) {
         aria-label={isMuted ? "Unmute sample" : "Mute sample"}
         onClick={toggleMute}
       >
-        {isMuted ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
+        {isMuted ? (
+          <VolumeX size={16} aria-hidden="true" />
+        ) : (
+          <Volume2 size={16} aria-hidden="true" />
+        )}
       </button>
     </div>
   );
@@ -1942,8 +1982,10 @@ function ChapterRow({
           <strong>{chapter.title}</strong>
           <span className="chapter-meta">
             <small>
-              {chapter.paragraphs.filter((paragraph) => paragraph.included)
-                .length}{" "}
+              {
+                chapter.paragraphs.filter((paragraph) => paragraph.included)
+                  .length
+              }{" "}
               paragraphs
             </small>
             <span className="chapter-status">
@@ -2134,7 +2176,8 @@ function parseStoredStyleDraft(value: unknown): StyleOverride | null {
   }
   const payload = value as Record<string, unknown>;
   const draft: StyleOverride = {
-    style_id: typeof payload.style_id === "string" ? payload.style_id : "neutral",
+    style_id:
+      typeof payload.style_id === "string" ? payload.style_id : "neutral",
   };
   if (typeof payload.engine === "string" && isEngineName(payload.engine)) {
     draft.engine = payload.engine;
