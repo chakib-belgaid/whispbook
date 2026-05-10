@@ -38,11 +38,13 @@ describe("App review fixes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     apiMock.getHealth.mockResolvedValue(sampleHealth());
     apiMock.getStyles.mockResolvedValue([sampleStyle()]);
     apiMock.getTtsCapabilities.mockResolvedValue(sampleCapabilities());
     apiMock.getBooks.mockResolvedValue([sampleBook("existing", "Existing", "existing.md")]);
     apiMock.saveBook.mockImplementation(async (book: Book) => book);
+    apiMock.createCustomStyle.mockResolvedValue(sampleStyle({ custom: true, id: "custom", name: "Custom" }));
   });
 
   afterEach(() => {
@@ -50,6 +52,7 @@ describe("App review fixes", () => {
       act(() => root.unmount());
     }
     mountedRoots = [];
+    window.localStorage.clear();
   });
 
   it("activates a newly imported first selection before a later reused book", async () => {
@@ -93,6 +96,105 @@ describe("App review fixes", () => {
     expect(paragraphSelectors(container)[1].getAttribute("aria-current")).toBe("true");
   });
 
+  it("updates Chatterbox Turbo voice and prompt controls without reusing a stale event target", async () => {
+    const { container } = await renderApp();
+
+    const engineSelect = controlByLabel<HTMLSelectElement>(container, "Narration source");
+    engineSelect.value = "chatterbox_turbo";
+    await act(async () => {
+      engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const voiceSelect = controlByLabel<HTMLSelectElement>(container, "Narrator");
+    voiceSelect.value = "reference";
+    await act(async () => {
+      voiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const promptPrefix = controlByLabel<HTMLTextAreaElement>(
+      container,
+      "Opening incantation",
+    );
+    promptPrefix.value = "[hushed] ";
+    await act(async () => {
+      promptPrefix.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(voiceSelect.value).toBe("reference");
+    expect(promptPrefix.value).toBe("[hushed] ");
+  });
+
+  it("restores the last used voice configuration instead of booting into a preset", async () => {
+    window.localStorage.setItem(
+      "whispbook.styleDraft",
+      JSON.stringify({
+        style_id: "neutral",
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+        temperature: 0.72,
+        top_p: 0.93,
+        paragraph_gap_ms: 300,
+        comma_pause_ms: 80,
+        prompt_prefix: "[calm] ",
+      }),
+    );
+
+    const { container } = await renderApp();
+
+    expect(controlByLabel<HTMLSelectElement>(container, "Narration source").value).toBe(
+      "chatterbox_turbo",
+    );
+    expect(controlByLabel<HTMLSelectElement>(container, "Narrator").value).toBe("reference");
+    expect(controlByLabel<HTMLTextAreaElement>(container, "Opening incantation").value).toBe(
+      "[calm] ",
+    );
+  });
+
+  it("keeps technical rune drawers collapsed by default", async () => {
+    const { container } = await renderApp();
+
+    const ritualRunes = detailsBySummary(container, "Ritual Runes");
+    expect(ritualRunes.open).toBe(false);
+    expect(ritualRunes.textContent).toContain("Reading pace");
+    expect(ritualRunes.textContent).toContain("Chapter breath");
+  });
+
+  it("passes the selected reference audio start point when saving a custom style", async () => {
+    const { container } = await renderApp();
+    const input = container.querySelector<HTMLInputElement>('input[accept*="audio"]');
+    expect(input).not.toBeNull();
+
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["voice"], "voice.wav", { type: "audio/wav" })],
+    });
+
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const voiceRunes = detailsBySummary(container, "Deeper voice runes");
+    voiceRunes.open = true;
+    voiceRunes.dispatchEvent(new Event("toggle", { bubbles: true }));
+
+    const startInput = controlByLabel<HTMLInputElement>(container, "Begin charm at");
+    startInput.value = "15";
+    await act(async () => {
+      startInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => {
+      buttonByText(container, "Save voice charm").click();
+    });
+
+    expect(apiMock.createCustomStyle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceStartSeconds: 15,
+      }),
+    );
+  });
+
   async function renderApp(): Promise<{ container: HTMLDivElement }> {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -115,6 +217,41 @@ function paragraphSelectors(container: ParentNode): HTMLElement[] {
   return Array.from(
     container.querySelectorAll<HTMLElement>('[role="button"][aria-label^="Select paragraph"]'),
   );
+}
+
+function controlByLabel<T extends HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+  container: ParentNode,
+  labelText: string,
+): T {
+  const label = Array.from(container.querySelectorAll("label")).find((candidate) =>
+    candidate.textContent?.includes(labelText),
+  );
+  const control = label?.querySelector("input, select, textarea");
+  if (!control) {
+    throw new Error(`Could not find control for label: ${labelText}`);
+  }
+  return control as T;
+}
+
+function buttonByText(container: ParentNode, text: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((candidate) =>
+    candidate.textContent?.includes(text),
+  );
+  if (!button) {
+    throw new Error(`Could not find button: ${text}`);
+  }
+  return button;
+}
+
+function detailsBySummary(container: ParentNode, text: string): HTMLDetailsElement {
+  const summary = Array.from(container.querySelectorAll("summary")).find((candidate) =>
+    candidate.textContent?.includes(text),
+  );
+  const details = summary?.closest("details");
+  if (!details) {
+    throw new Error(`Could not find details summary: ${text}`);
+  }
+  return details as HTMLDetailsElement;
 }
 
 function sampleBook(id: string, title: string, filename: string): Book {
@@ -170,7 +307,7 @@ function sampleHealth(): HealthResponse {
   };
 }
 
-function sampleStyle(): VoiceStyle {
+function sampleStyle(overrides: Partial<VoiceStyle> = {}): VoiceStyle {
   return {
     id: "fantasy",
     name: "Fantasy",
@@ -188,20 +325,29 @@ function sampleStyle(): VoiceStyle {
     prompt_prefix: "",
     reference_audio_url: null,
     custom: false,
+    ...overrides,
   };
 }
 
 function sampleCapabilities(): TTSCapabilities {
-  const capability: EngineCapabilities = {
+  const kokoro: EngineCapabilities = {
     engine: "kokoro",
     voices: [{ value: "bm_george", label: "George", language: "b" }],
     languages: [{ value: "b", label: "British English" }],
   };
+  const chatterbox: EngineCapabilities = {
+    engine: "chatterbox",
+    voices: [
+      { value: "default", label: "Default model voice", language: "en" },
+      { value: "reference", label: "Custom reference audio", language: "en" },
+    ],
+    languages: [{ value: "en", label: "English" }],
+  };
 
   return {
-    kokoro: capability,
-    chatterbox: { ...capability, engine: "chatterbox" },
-    chatterbox_turbo: { ...capability, engine: "chatterbox_turbo" },
-    mock: { ...capability, engine: "mock" },
+    kokoro,
+    chatterbox,
+    chatterbox_turbo: { ...chatterbox, engine: "chatterbox_turbo" },
+    mock: { ...chatterbox, engine: "mock" },
   };
 }
