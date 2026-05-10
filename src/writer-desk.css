@@ -1742,6 +1742,12 @@ summary:focus-visible,
   }
 }
 
+@media (max-width: 1180px) {
+  .controls-zone {
+    --mobile-bg: var(--manuscript-zone-bg);
+  }
+}
+
 @media (max-width: 680px) {
   .app-shell {
     padding-top: 122px;
