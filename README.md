@@ -7,7 +7,7 @@
 
 Whispbook is a self-hosted audiobook studio for readers, writers, and audiobook tinkerers who want to turn selectable-text documents into chaptered audio with subtitles. It combines a React writing desk, a FastAPI backend, local document conversion, and local/open-source TTS engines so you can import a manuscript, clean up the text, preview voices, generate chapters, and export a finished audiobook package.
 
-![Whispbook workbench screenshot](docs/assets/whispbook-workbench.png)
+![Whispbook workbench screenshot](docs/assets/whispbook-workbench.jpg)
 
 ## Features
 
