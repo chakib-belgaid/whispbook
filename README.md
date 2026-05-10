@@ -32,7 +32,8 @@ The backend is a FastAPI application in `backend/app/`. It stores imported books
 
 - Node.js 20 or newer.
 - npm 10.8.2 or compatible; the project declares `packageManager: npm@10.8.2`.
-- Python 3.10 or newer. Python 3.11+ is recommended.
+- Python 3.10 through 3.13. Python 3.11+ is recommended.
+- `uv` for backend dependency management.
 - `ffmpeg` and `ffprobe`.
 - `espeak-ng` for Kokoro voices.
 - Enough disk space for Hugging Face model downloads.
@@ -49,10 +50,8 @@ Create and run the backend from another terminal:
 
 ```bash
 cd backend
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv sync
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Run the frontend:
@@ -91,11 +90,9 @@ Whispbook loads Kokoro, Chatterbox, and Chatterbox Turbo weights from Hugging Fa
 
 ```bash
 cd backend
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 
-python - <<'PY'
+uv run python - <<'PY'
 from huggingface_hub import snapshot_download
 import os
 
@@ -196,10 +193,10 @@ Pass `--detach` to start the backend job and exit without polling, `--skip-save`
 ## Troubleshooting
 
 - `ffmpeg and ffprobe are required.`: install ffmpeg and make sure both `ffmpeg` and `ffprobe` are on `PATH`.
-- `Kokoro is not installed.`: activate the backend environment and run `pip install -r backend/requirements.txt`; install `espeak-ng` on the host.
-- `Chatterbox needs torch and torchaudio.`: reinstall backend requirements in a Python 3.10+ environment.
-- `Chatterbox's PerTh dependency needs pkg_resources.`: reinstall backend requirements so the compatible setuptools dependency is present.
-- `MarkItDown is required to import documents.`: install backend requirements in the active backend environment.
+- `Kokoro is not installed.`: run `uv sync --project backend`; install `espeak-ng` on the host.
+- `Chatterbox needs torch and torchaudio.`: run `uv sync --project backend` with Python 3.10 or newer.
+- `Chatterbox's PerTh dependency needs pkg_resources.`: run `uv sync --project backend` so the compatible setuptools dependency is present.
+- `MarkItDown is required to import documents.`: run `uv sync --project backend`.
 - `No text content found.`: upload a selectable-text document; OCR is not included in this version.
 - Frontend API requests fail in development: confirm the backend is running on `http://127.0.0.1:8000` or set `WHISPBOOK_API_URL` before running `npm run dev`.
 
@@ -219,8 +216,8 @@ npm run format:check
 npm run lint
 npm test
 npm run build
-uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
-uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests
+uv run --project backend --frozen ruff check backend/app backend/tests
+uv run --project backend --frozen pytest backend/tests
 ```
 
 ## License

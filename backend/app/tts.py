@@ -55,7 +55,7 @@ class KokoroEngine(BaseEngine):
             import soundfile as sf
             from kokoro import KPipeline
         except ImportError as error:
-            raise TTSError("Kokoro is not installed. Install backend requirements and espeak-ng.") from error
+            raise TTSError("Kokoro is not installed. Run `uv sync --project backend` and install espeak-ng.") from error
 
         lang_code = kokoro_lang_code(style.language)
         if lang_code not in self._pipelines:
@@ -87,7 +87,7 @@ class ChatterboxEngine(BaseEngine):
             import torch
             import torchaudio as ta
         except ImportError as error:
-            raise TTSError("Chatterbox needs torch and torchaudio. Install backend requirements.") from error
+            raise TTSError("Chatterbox needs torch and torchaudio. Run `uv sync --project backend`.") from error
 
         language = (style.language or "en").lower()
         reference_path = style.reference_audio_path
@@ -144,7 +144,7 @@ class ChatterboxEngine(BaseEngine):
         except ModuleNotFoundError as error:
             if error.name == "pkg_resources":
                 raise TTSError(
-                    "Chatterbox's PerTh dependency needs pkg_resources. Install setuptools<82 or reinstall backend requirements."
+                    "Chatterbox's PerTh dependency needs pkg_resources. Run `uv sync --project backend` to install setuptools<82."
                 ) from error
             raise
 
@@ -340,7 +340,7 @@ def ensure_perth_watermarker() -> None:
     try:
         import perth
     except ImportError as error:
-        raise TTSError("Chatterbox needs resemble-perth. Reinstall backend requirements.") from error
+        raise TTSError("Chatterbox needs resemble-perth. Run `uv sync --project backend`.") from error
 
     if getattr(perth, "PerthImplicitWatermarker", None) is not None:
         return
@@ -350,7 +350,7 @@ def ensure_perth_watermarker() -> None:
     except ModuleNotFoundError as error:
         if error.name == "pkg_resources":
             raise TTSError(
-                "Chatterbox's PerTh dependency needs pkg_resources. Install setuptools<82 or reinstall backend requirements."
+                "Chatterbox's PerTh dependency needs pkg_resources. Run `uv sync --project backend` to install setuptools<82."
             ) from error
         raise
     watermarker = getattr(module, "PerthImplicitWatermarker", None)
