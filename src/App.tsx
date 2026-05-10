@@ -21,7 +21,14 @@ import {
   Upload,
   Wand2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   createCustomStyle,
   createPreview,
@@ -64,19 +71,21 @@ import type {
 } from "./types";
 
 const defaultStyleDraft: StyleOverride = {
-  style_id: "fantasy",
+  style_id: "neutral",
   engine: "kokoro",
-  voice: "bm_george",
-  language: "b",
-  speed: 0.91,
+  voice: "af_heart",
+  language: "a",
+  speed: 1,
   exaggeration: 0.5,
   cfg_weight: 0.5,
   temperature: 0.8,
   top_p: 1,
-  paragraph_gap_ms: 620,
-  comma_pause_ms: 190,
+  paragraph_gap_ms: 450,
+  comma_pause_ms: 170,
   prompt_prefix: "",
 };
+
+const storedStyleDraftKey = "whispbook.styleDraft";
 
 const documentImportAccept = [
   "application/pdf",
@@ -162,7 +171,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
       ranges: [
         {
           key: "speed",
-          label: "Speed",
+          label: "Reading pace",
           min: 0.7,
           max: 1.4,
           step: 0.01,
@@ -171,7 +180,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "paragraph_gap_ms",
-          label: "Paragraph Pause",
+          label: "Chapter breath",
           min: 0,
           max: 1500,
           step: 25,
@@ -180,7 +189,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma Pause",
+          label: "Comma hush",
           min: 0,
           max: 600,
           step: 20,
@@ -195,7 +204,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
       ranges: [
         {
           key: "exaggeration",
-          label: "Expression",
+          label: "Dramatic color",
           min: 0,
           max: 1.2,
           step: 0.01,
@@ -203,7 +212,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "cfg_weight",
-          label: "CFG",
+          label: "Narrator discipline",
           min: 0,
           max: 1,
           step: 0.01,
@@ -211,7 +220,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "temperature",
-          label: "Temperature",
+          label: "Creative spark",
           min: 0.2,
           max: 1.2,
           step: 0.01,
@@ -219,7 +228,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "top_p",
-          label: "Top P",
+          label: "Focus circle",
           min: 0.1,
           max: 1,
           step: 0.01,
@@ -227,7 +236,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "paragraph_gap_ms",
-          label: "Paragraph Pause",
+          label: "Chapter breath",
           min: 0,
           max: 1500,
           step: 25,
@@ -236,7 +245,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma Pause",
+          label: "Comma hush",
           min: 0,
           max: 600,
           step: 20,
@@ -251,7 +260,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
       ranges: [
         {
           key: "temperature",
-          label: "Temperature",
+          label: "Creative spark",
           min: 0.2,
           max: 1.2,
           step: 0.01,
@@ -259,7 +268,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "top_p",
-          label: "Top P",
+          label: "Focus circle",
           min: 0.1,
           max: 1,
           step: 0.01,
@@ -267,7 +276,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "paragraph_gap_ms",
-          label: "Paragraph Pause",
+          label: "Chapter breath",
           min: 0,
           max: 1500,
           step: 25,
@@ -276,7 +285,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma Pause",
+          label: "Comma hush",
           min: 0,
           max: 600,
           step: 20,
@@ -291,7 +300,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
       ranges: [
         {
           key: "paragraph_gap_ms",
-          label: "Paragraph Pause",
+          label: "Chapter breath",
           min: 0,
           max: 1500,
           step: 25,
@@ -300,7 +309,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
         },
         {
           key: "comma_pause_ms",
-          label: "Comma Pause",
+          label: "Comma hush",
           min: 0,
           max: 600,
           step: 20,
@@ -326,8 +335,9 @@ function App() {
   const [selectedParagraphId, setSelectedParagraphId] = useState<string | null>(
     null,
   );
-  const [styleDraft, setStyleDraft] =
-    useState<StyleOverride>(defaultStyleDraft);
+  const [styleDraft, setStyleDraft] = useState<StyleOverride>(
+    () => readStoredStyleDraft() ?? defaultStyleDraft,
+  );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [job, setJob] = useState<GenerateJob | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -344,11 +354,17 @@ function App() {
     '{"speed": 0.95, "exaggeration": 0.65, "cfg_weight": 0.35}',
   );
   const [customReference, setCustomReference] = useState<File | null>(null);
+  const [customReferenceStartSeconds, setCustomReferenceStartSeconds] =
+    useState(0);
   const [activePane, setActivePane] = useState<WorkbenchPane>("manuscript");
 
   useEffect(() => {
     void boot();
   }, []);
+
+  useEffect(() => {
+    writeStoredStyleDraft(styleDraft);
+  }, [styleDraft]);
 
   useEffect(() => {
     if (!job || job.status === "done" || job.status === "error") {
@@ -433,15 +449,10 @@ function App() {
       setBooks(nextBooks);
       const firstBook = nextBooks[0] ?? null;
       activateBook(firstBook);
-      const preferredStyle =
-        nextStyles.find((style) => style.id === "fantasy") ??
-        nextStyles.find((style) => style.id === "neutral") ??
-        nextStyles[0];
-      if (preferredStyle) {
-        setStyleDraft(
-          normalizeStyleDraft(styleToDraft(preferredStyle), nextCapabilities),
-        );
-      }
+      const storedDraft = readStoredStyleDraft();
+      setStyleDraft((current) =>
+        normalizeStyleDraft(storedDraft ?? current, nextCapabilities),
+      );
       setError(null);
     } catch (caught) {
       setError(messageFromError(caught));
@@ -666,6 +677,7 @@ function App() {
         engine: customEngine,
         paramsJson: customParams,
         referenceAudio: customReference,
+        referenceStartSeconds: customReferenceStartSeconds,
       });
       setStyles((current) => [
         created,
@@ -674,6 +686,7 @@ function App() {
       setStyleDraft(styleToDraft(created));
       setCustomName("");
       setCustomReference(null);
+      setCustomReferenceStartSeconds(0);
       if (styleReferenceRef.current) {
         styleReferenceRef.current.value = "";
       }
@@ -694,6 +707,7 @@ function App() {
       fileName.endsWith(".json") || fileName.endsWith(".whisp");
     if (!isStyleFile) {
       setCustomReference(file);
+      setCustomReferenceStartSeconds(0);
       setCustomName((current) =>
         current.trim()
           ? current
@@ -726,6 +740,7 @@ function App() {
       );
       setCustomParams(JSON.stringify(params, null, 2));
       setCustomReference(null);
+      setCustomReferenceStartSeconds(0);
       setError(null);
     } catch (caught) {
       setError(`Could not import style file: ${messageFromError(caught)}`);
@@ -734,6 +749,10 @@ function App() {
         styleReferenceRef.current.value = "";
       }
     }
+  }
+
+  function updateCustomReferenceStartSeconds(value: string): void {
+    setCustomReferenceStartSeconds(Math.max(0, Number(value) || 0));
   }
 
   function updateBookTitle(title: string): void {
@@ -878,24 +897,26 @@ function App() {
     styleDraft.language,
   );
   const activeEngineSettings = settingsForEngine(styleDraft.engine);
+  const customStyles = styles.filter((style) => style.custom);
 
   const selectedStyleName =
-    styles.find((style) => style.id === styleDraft.style_id)?.name ?? "Fantasy";
+    customStyles.find((style) => style.id === styleDraft.style_id)?.name ??
+    "Manual";
   const isImporting = busy?.startsWith("Importing") ?? false;
 
   return (
     <main className="app-shell">
       <header className="status-strip" aria-label="System status">
-        <span>Engine: {formatEngineName(styleDraft.engine)}</span>
+        <span>Source: {formatEngineName(styleDraft.engine)}</span>
         <span aria-hidden="true">|</span>
         <span>Renderer: {health?.ffmpeg ? "FFMPEG" : "Unavailable"}</span>
         <span aria-hidden="true">|</span>
-        <span>Style: {selectedStyleName}</span>
+        <span>Charm: {selectedStyleName}</span>
         <button
           className="status-config-button"
           type="button"
-          title="Show render settings"
-          aria-label="Show render settings"
+          title="Open narration console"
+          aria-label="Open narration console"
           onClick={() => setActivePane("render")}
         >
           <Settings size={16} aria-hidden="true" />
@@ -1260,173 +1281,24 @@ function App() {
             <div className="zone-overlay" aria-hidden="true" />
             <aside
               className="render-panel settings-scroll zone-content"
-              aria-label="Voice timing output and style settings"
+              aria-label="Narration ritual console"
             >
-            <section className="settings-section">
-              <div className="settings-heading">
-                <Mic2 size={19} aria-hidden="true" />
-                <h2>Voice</h2>
-              </div>
-              <label className="field">
-                <span>Engine</span>
-                <select
-                  value={styleDraft.engine}
-                  onChange={(event) => {
-                    const engine = event.currentTarget.value as EngineName;
-                    setStyleDraft((current) =>
-                      normalizeStyleDraft({ ...current, engine }, capabilities),
-                    );
-                  }}
-                >
-                  <option value="kokoro">Kokoro</option>
-                  <option value="chatterbox">Chatterbox</option>
-                  <option value="chatterbox_turbo">Chatterbox Turbo</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Voice</span>
-                <select
-                  value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
-                  disabled={voiceOptions.length === 0}
-                  onChange={(event) =>
-                    setStyleDraft((current) => ({
-                      ...current,
-                      voice: event.currentTarget.value,
-                    }))
-                  }
-                >
-                  {voiceOptions.map((voice) => (
-                    <option key={voice.value} value={voice.value}>
-                      {voice.label} ({voice.value})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {activeEngineSettings.language && (
-                <label className="field">
-                  <span>Language</span>
-                  <select
-                    value={
-                      styleDraft.language ?? languageOptions[0]?.value ?? ""
-                    }
-                    disabled={languageOptions.length === 0}
-                    onChange={(event) => {
-                      const language = event.currentTarget.value;
-                      setStyleDraft((current) =>
-                        normalizeStyleDraft(
-                          { ...current, language },
-                          capabilities,
-                        ),
-                      );
-                    }}
-                  >
-                    {languageOptions.map((language) => (
-                      <option key={language.value} value={language.value}>
-                        {language.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {activeEngineSettings.promptPrefix && (
-                <label className="field tts-prompt-field">
-                  <span>Prompt Prefix</span>
-                  <textarea
-                    rows={3}
-                    value={styleDraft.prompt_prefix ?? ""}
-                    onChange={(event) =>
-                      setStyleDraft((current) => ({
-                        ...current,
-                        prompt_prefix: event.currentTarget.value,
-                      }))
-                    }
-                  />
-                </label>
-              )}
-            </section>
-
-            <section className="settings-section">
-              <div className="settings-heading">
-                <Clock3 size={19} aria-hidden="true" />
-                <h2>Timing</h2>
-              </div>
-              {activeEngineSettings.ranges.map((control) => (
-                <RangeControl
-                  key={control.key}
-                  label={control.label}
-                  value={styleDraft[control.key] ?? control.defaultValue}
-                  min={control.min}
-                  max={control.max}
-                  step={control.step}
-                  suffix={control.suffix}
-                  onChange={(value) =>
-                    setStyleDraft((current) => ({
-                      ...current,
-                      [control.key]: value,
-                    }))
-                  }
-                />
-              ))}
-            </section>
-
-            <section className="settings-section output-section">
-              <div className="settings-heading">
-                <FileAudio size={19} aria-hidden="true" />
-                <h2>Output</h2>
-              </div>
-              <div className="output-actions">
-                <button
-                  className="secondary-action"
-                  type="button"
-                  disabled={!selectedParagraph || Boolean(busy)}
-                  onClick={() => void handlePreview()}
-                >
-                  <Play size={18} />
-                  <span>
-                    {busy === "Previewing" ? "Previewing" : "Preview"}
-                  </span>
-                </button>
-                <button
-                  className="secondary-action"
-                  type="button"
-                  disabled={!book || noChaptersSelected}
-                  onClick={handleExportScript}
-                >
-                  <FileText size={18} />
-                  <span>Export Script</span>
-                </button>
-                <button
-                  className="generate-action"
-                  type="button"
-                  disabled={!book || Boolean(busy)}
-                  onClick={() => void handleGenerate()}
-                >
-                  <Sparkles size={20} />
-                  <span>
-                    {busy === "Starting" ? "Starting" : "Generate Audiobook"}
-                  </span>
-                  <ChevronRight size={20} />
-                </button>
-              </div>
-              {previewUrl && (
-                <div className="audio-result">
-                  <audio controls src={mediaUrl(previewUrl)} />
-                </div>
-              )}
-            </section>
-
-            <section className="settings-section style-preset-section">
+            <section className="settings-section ritual-section custom-style-section">
               <div className="settings-heading">
                 <Wand2 size={19} aria-hidden="true" />
-                <h2>Style Preset</h2>
+                <h2>Spellbook</h2>
               </div>
-              <label className="field">
-                <span>Preset</span>
-                <select
-                  value={styleDraft.style_id}
-                  onChange={(event) => {
-                    const next = styles.find(
-                      (style) => style.id === event.currentTarget.value,
+              {customStyles.length > 0 && (
+                <SelectField
+                  label="Saved spellbook voice"
+                  value={
+                    customStyles.some((style) => style.id === styleDraft.style_id)
+                      ? styleDraft.style_id
+                      : ""
+                  }
+                  onChange={(styleId) => {
+                    const next = customStyles.find(
+                      (style) => style.id === styleId,
                     );
                     if (next) {
                       setStyleDraft(
@@ -1436,13 +1308,14 @@ function App() {
                     }
                   }}
                 >
-                  {styles.map((style) => (
+                  <option value="">Current ritual</option>
+                  {customStyles.map((style) => (
                     <option key={style.id} value={style.id}>
                       {style.name}
                     </option>
                   ))}
-                </select>
-              </label>
+                </SelectField>
+              )}
               <div className="style-import-row">
                 <input
                   ref={styleReferenceRef}
@@ -1459,16 +1332,18 @@ function App() {
                   onClick={() => styleReferenceRef.current?.click()}
                 >
                   <Upload size={18} />
-                  <span>Import Style File</span>
+                  <span>Import voice charm</span>
                 </button>
-                <small>json, .whisp, audio</small>
+                <small>json, .whisp, or audio charm.</small>
               </div>
               {(customReference || customName.trim()) && (
-                <details className="advanced-style" open>
-                  <summary>Advanced style params</summary>
+                <RitualDrawer
+                  title="Deeper voice runes"
+                  className="advanced-style"
+                >
                   <div className="control-grid">
                     <label className="field style-name-field">
-                      <span>Import name</span>
+                      <span>Charm name</span>
                       <input
                         placeholder="Custom style name"
                         value={customName}
@@ -1477,25 +1352,38 @@ function App() {
                         }
                       />
                     </label>
+                    <SelectField
+                      label="Narration source"
+                      value={customEngine}
+                      onChange={(value) => setCustomEngine(value as EngineName)}
+                    >
+                      <option value="chatterbox">Chatterbox</option>
+                      <option value="chatterbox_turbo">Chatterbox Turbo</option>
+                      <option value="kokoro">Kokoro</option>
+                    </SelectField>
+                    {customReference && (
+                      <label className="field">
+                        <span>Begin charm at</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={customReferenceStartSeconds}
+                          onChange={(event) =>
+                            updateCustomReferenceStartSeconds(
+                              event.currentTarget.value,
+                            )
+                          }
+                          onInput={(event) =>
+                            updateCustomReferenceStartSeconds(
+                              event.currentTarget.value,
+                            )
+                          }
+                        />
+                      </label>
+                    )}
                     <label className="field">
-                      <span>Engine</span>
-                      <select
-                        value={customEngine}
-                        onChange={(event) =>
-                          setCustomEngine(
-                            event.currentTarget.value as EngineName,
-                          )
-                        }
-                      >
-                        <option value="chatterbox">Chatterbox</option>
-                        <option value="chatterbox_turbo">
-                          Chatterbox Turbo
-                        </option>
-                        <option value="kokoro">Kokoro</option>
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>Params JSON</span>
+                      <span>Rune ledger</span>
                       <textarea
                         rows={3}
                         value={customParams}
@@ -1512,9 +1400,158 @@ function App() {
                     onClick={() => void handleCustomStyle()}
                   >
                     <Check size={18} />
-                    <span>Save Style</span>
+                    <span>Save voice charm</span>
                   </button>
-                </details>
+                </RitualDrawer>
+              )}
+            </section>
+
+            <section className="settings-section ritual-section narrator-section">
+              <div className="settings-heading">
+                <Mic2 size={19} aria-hidden="true" />
+                <h2>Narrator</h2>
+              </div>
+              <SelectField
+                label="Narration source"
+                value={styleDraft.engine}
+                onChange={(value) => {
+                  const engine = value as EngineName;
+                  setStyleDraft((current) =>
+                    normalizeStyleDraft({ ...current, engine }, capabilities),
+                  );
+                }}
+              >
+                <option value="kokoro">Kokoro</option>
+                <option value="chatterbox">Chatterbox</option>
+                <option value="chatterbox_turbo">Chatterbox Turbo</option>
+              </SelectField>
+              <SelectField
+                label="Narrator"
+                value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
+                disabled={voiceOptions.length === 0}
+                onChange={(voice) =>
+                  setStyleDraft((current) => ({
+                    ...current,
+                    voice,
+                  }))
+                }
+              >
+                {voiceOptions.map((voice) => (
+                  <option key={voice.value} value={voice.value}>
+                    {voice.label} ({voice.value})
+                  </option>
+                ))}
+              </SelectField>
+              {activeEngineSettings.language && (
+                <SelectField
+                  label="Language"
+                  value={styleDraft.language ?? languageOptions[0]?.value ?? ""}
+                  disabled={languageOptions.length === 0}
+                  onChange={(language) =>
+                    setStyleDraft((current) =>
+                      normalizeStyleDraft(
+                        { ...current, language },
+                        capabilities,
+                      ),
+                    )
+                  }
+                >
+                  {languageOptions.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
+                    </option>
+                  ))}
+                </SelectField>
+              )}
+            </section>
+
+            <section className="settings-section ritual-section rune-section">
+              <div className="settings-heading">
+                <Clock3 size={19} aria-hidden="true" />
+                <h2>Ritual Runes</h2>
+              </div>
+              <RitualDrawer title="Ritual Runes">
+                <div className="control-grid">
+                  {activeEngineSettings.promptPrefix && (
+                    <label className="field tts-prompt-field">
+                      <span>Opening incantation</span>
+                      <textarea
+                        rows={3}
+                        value={styleDraft.prompt_prefix ?? ""}
+                        onChange={(event) => {
+                          const promptPrefix = event.currentTarget.value;
+                          setStyleDraft((current) => ({
+                            ...current,
+                            prompt_prefix: promptPrefix,
+                          }));
+                        }}
+                      />
+                    </label>
+                  )}
+                  {activeEngineSettings.ranges.map((control) => (
+                    <RangeControl
+                      key={control.key}
+                      label={control.label}
+                      value={styleDraft[control.key] ?? control.defaultValue}
+                      min={control.min}
+                      max={control.max}
+                      step={control.step}
+                      suffix={control.suffix}
+                      onChange={(value) =>
+                        setStyleDraft((current) => ({
+                          ...current,
+                          [control.key]: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </RitualDrawer>
+            </section>
+
+            <section className="settings-section output-section">
+              <div className="settings-heading">
+                <FileAudio size={19} aria-hidden="true" />
+                <h2>Binding</h2>
+              </div>
+              <div className="output-actions">
+                <button
+                  className="secondary-action"
+                  type="button"
+                  disabled={!selectedParagraph || Boolean(busy)}
+                  onClick={() => void handlePreview()}
+                >
+                  <Play size={18} />
+                  <span>
+                    {busy === "Previewing" ? "Listening" : "Hear a passage"}
+                  </span>
+                </button>
+                <button
+                  className="secondary-action"
+                  type="button"
+                  disabled={!book || noChaptersSelected}
+                  onClick={handleExportScript}
+                >
+                  <FileText size={18} />
+                  <span>Copy ritual script</span>
+                </button>
+                <button
+                  className="generate-action"
+                  type="button"
+                  disabled={!book || Boolean(busy)}
+                  onClick={() => void handleGenerate()}
+                >
+                  <Sparkles size={20} />
+                  <span>
+                    {busy === "Starting" ? "Binding" : "Bind the audiobook"}
+                  </span>
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+              {previewUrl && (
+                <div className="audio-result">
+                  <audio controls src={mediaUrl(previewUrl)} />
+                </div>
               )}
             </section>
 
@@ -1524,7 +1561,7 @@ function App() {
                 aria-live="polite"
               >
                 <div className="panel-heading">
-                  <h2>Generation</h2>
+                  <h2>Binding progress</h2>
                   <span>{Math.round(job.progress)}%</span>
                 </div>
                 <div className="progress-bar" aria-hidden="true">
@@ -1803,6 +1840,59 @@ function ChapterRow({
   );
 }
 
+function SelectField({
+  label,
+  value,
+  disabled = false,
+  children,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  children: ReactNode;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="field select-field">
+      <span>{label}</span>
+      <span className="select-shell">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.currentTarget.value)}
+        >
+          {children}
+        </select>
+      </span>
+    </label>
+  );
+}
+
+function RitualDrawer({
+  title,
+  className = "",
+  children,
+}: {
+  title: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className={`ritual-drawer ${className}`.trim()}>
+      <summary>
+        <ChevronRight
+          className="ritual-drawer-icon"
+          size={16}
+          aria-hidden="true"
+        />
+        <span>{title}</span>
+      </summary>
+      <div className="ritual-drawer-body">{children}</div>
+    </details>
+  );
+}
+
 function RangeControl({
   label,
   value,
@@ -1820,12 +1910,20 @@ function RangeControl({
   suffix?: string;
   onChange: (value: number) => void;
 }) {
+  const displayValue = Number.isInteger(step)
+    ? Math.round(value).toString()
+    : value.toFixed(2);
+  const progress = ((value - min) / (max - min)) * 100;
+  const rangeStyle = {
+    "--range-progress": `${progress}%`,
+  } as CSSProperties;
+
   return (
-    <label className="range-field">
+    <label className="range-field rune-range" style={rangeStyle}>
       <span>
         {label}
-        <strong>
-          {Number.isInteger(step) ? Math.round(value) : value.toFixed(2)}
+        <strong className="range-value">
+          {displayValue}
           {suffix}
         </strong>
       </span>
@@ -1873,6 +1971,66 @@ function formatEngineName(engine?: EngineName): string {
 
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function readStoredStyleDraft(): StyleOverride | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(storedStyleDraftKey);
+    if (!raw) {
+      return null;
+    }
+    return parseStoredStyleDraft(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredStyleDraft(draft: StyleOverride): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(storedStyleDraftKey, JSON.stringify(draft));
+  } catch {
+    // Local storage may be unavailable in private or embedded contexts.
+  }
+}
+
+function parseStoredStyleDraft(value: unknown): StyleOverride | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const payload = value as Record<string, unknown>;
+  const draft: StyleOverride = {
+    style_id: typeof payload.style_id === "string" ? payload.style_id : "neutral",
+  };
+  if (typeof payload.engine === "string" && isEngineName(payload.engine)) {
+    draft.engine = payload.engine;
+  }
+  for (const key of [
+    "speed",
+    "exaggeration",
+    "cfg_weight",
+    "temperature",
+    "top_p",
+    "paragraph_gap_ms",
+    "comma_pause_ms",
+  ] as const) {
+    const valueForKey = payload[key];
+    if (typeof valueForKey === "number" && Number.isFinite(valueForKey)) {
+      draft[key] = valueForKey;
+    }
+  }
+  for (const key of ["voice", "language", "prompt_prefix"] as const) {
+    const valueForKey = payload[key];
+    if (typeof valueForKey === "string") {
+      draft[key] = valueForKey;
+    }
+  }
+  return draft;
 }
 
 function isEngineName(value: string): value is EngineName {

@@ -79,11 +79,13 @@ export async function createCustomStyle(input: {
   engine: string;
   paramsJson: string;
   referenceAudio: File | null;
+  referenceStartSeconds: number;
 }): Promise<VoiceStyle> {
   const form = new FormData();
   form.set("name", input.name);
   form.set("engine", input.engine);
   form.set("params_json", input.paramsJson);
+  form.set("reference_start_seconds", String(input.referenceStartSeconds));
   if (input.referenceAudio) {
     form.set("reference_audio", input.referenceAudio);
   }
