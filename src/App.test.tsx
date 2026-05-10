@@ -134,9 +134,9 @@ describe("App review fixes", () => {
   it("defaults fresh audiobook settings to Chatterbox Turbo", async () => {
     const { container } = await renderApp();
 
-    expect(controlByLabel<HTMLSelectElement>(container, "TTS model").value).toBe(
-      "chatterbox_turbo",
-    );
+    expect(
+      controlByLabel<HTMLSelectElement>(container, "TTS model").value,
+    ).toBe("chatterbox_turbo");
     expect(currentTtsModelLayout(container).dataset.engine).toBe(
       "chatterbox_turbo",
     );
@@ -180,12 +180,13 @@ describe("App review fixes", () => {
     ).not.toBeNull();
     expect(container.textContent).toContain("Audiobook");
     expect(container.textContent).toContain("TTS model");
-    expect(container.textContent).toContain("Voice presets");
+    expect(container.textContent).toContain("Saved voices");
     expect(container.textContent).toContain("Current settings");
     expect(container.textContent).toContain("Voice fine-tuning");
     expect(container.textContent).toContain("Output");
     expect(container.textContent).toContain("Create audiobook");
 
+    expect(container.textContent).not.toContain("Voice:");
     expect(container.textContent).not.toContain("Spellbook");
     expect(container.textContent).not.toContain("Ritual Runes");
     expect(container.textContent).not.toContain("Opening incantation");
@@ -226,42 +227,43 @@ describe("App review fixes", () => {
     expect(layout.textContent).not.toContain("Narration guidance");
   });
 
-  it("keeps built-in voice presets selectable and allows returning to current settings", async () => {
+  it("lists saved storage voices without mixing in built-in presets", async () => {
     apiMock.getStyles.mockResolvedValue([
       sampleStyle({ id: "fantasy", name: "Fantasy", custom: false }),
       sampleStyle({
-        id: "sci-fi",
-        name: "Sci-fi",
-        custom: false,
-        voice: "am_adam",
-        language: "a",
-        speed: 1.08,
+        id: "tom-sawyer",
+        name: "Tom Sawyer",
+        custom: true,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
       }),
     ]);
     const { container } = await renderApp();
 
-    const presetSelect = controlByLabel<HTMLSelectElement>(
+    const savedVoiceSelect = controlByLabel<HTMLSelectElement>(
       container,
-      "Saved voice preset",
+      "Saved voice",
     );
 
     expect(
-      Array.from(presetSelect.options).map((option) => option.value),
-    ).toEqual(["", "fantasy", "sci-fi"]);
+      Array.from(savedVoiceSelect.options).map((option) => option.value),
+    ).toEqual(["", "tom-sawyer"]);
+    expect(savedVoiceSelect.textContent).not.toContain("Fantasy");
 
-    presetSelect.value = "fantasy";
+    savedVoiceSelect.value = "tom-sawyer";
     await act(async () => {
-      presetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    expect(presetSelect.value).toBe("fantasy");
+    expect(savedVoiceSelect.value).toBe("tom-sawyer");
 
-    presetSelect.value = "";
+    savedVoiceSelect.value = "";
     await act(async () => {
-      presetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    expect(presetSelect.value).toBe("");
+    expect(savedVoiceSelect.value).toBe("");
   });
 
   it("keeps fine-tuning drawers collapsed by default", async () => {
@@ -517,6 +519,46 @@ describe("App review fixes", () => {
     expect(container.textContent).toContain("Default narrator remains plain");
   });
 
+  it("shows saved storage voices when assigning selected text", async () => {
+    const book = sampleBook("storage-voices", "Storage Voices", "voices.md");
+    book.cast = [];
+    apiMock.getBooks.mockResolvedValue([book]);
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ id: "fantasy", name: "Fantasy", custom: false }),
+      sampleStyle({
+        id: "tom-sawyer",
+        name: "Tom Sawyer",
+        custom: true,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+      }),
+    ]);
+    const { container } = await renderApp();
+
+    await act(async () => {
+      selectTextInTextarea(
+        activeParagraphEditor(container),
+        0,
+        "Storage".length,
+      );
+    });
+    const voiceList = container.querySelector<HTMLElement>(
+      '[aria-label="Available character voices"]',
+    );
+
+    expect(voiceList?.textContent).toContain("Tom Sawyer");
+    expect(voiceList?.textContent).not.toContain("Fantasy");
+
+    await act(async () => {
+      voiceList
+        ?.querySelector<HTMLButtonElement>('[data-style-id="tom-sawyer"]')
+        ?.click();
+    });
+
+    expect(container.textContent).toContain("Tom Sawyer: Storage");
+  });
+
   async function renderApp(): Promise<{ container: HTMLDivElement }> {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -622,7 +664,10 @@ function selectTextInTextarea(
 }
 
 function selectNarrationEngine(container: ParentNode, engine: string): void {
-  const engineSelect = controlByLabel<HTMLSelectElement>(container, "TTS model");
+  const engineSelect = controlByLabel<HTMLSelectElement>(
+    container,
+    "TTS model",
+  );
   engineSelect.value = engine;
   engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
 }

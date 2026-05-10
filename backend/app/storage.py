@@ -11,7 +11,17 @@ from typing import Dict, List
 from .models import Book, GenerateJob, VoiceStyle
 
 
-storage_root = Path(os.environ.get("WHISPBOOK_STORAGE", "storage")).resolve()
+DEFAULT_STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage"
+
+
+def configured_storage_root() -> Path:
+    configured = os.environ.get("WHISPBOOK_STORAGE")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return DEFAULT_STORAGE_ROOT.resolve()
+
+
+storage_root = configured_storage_root()
 books_root = storage_root / "books"
 styles_root = storage_root / "styles"
 previews_root = storage_root / "previews"

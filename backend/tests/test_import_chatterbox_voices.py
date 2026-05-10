@@ -219,3 +219,23 @@ def test_script_help_runs_from_repo_root():
     assert result.returncode == 0
     assert "--source" in result.stdout
     assert "--identifier" in result.stdout
+
+
+def test_parse_args_defaults_to_repo_storage(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[2]
+    monkeypatch.chdir(repo_root / "backend")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "import_chatterbox_voices.py",
+            "--source",
+            "librivox",
+            "--id",
+            "123",
+        ],
+    )
+
+    options = importer.parse_args()
+
+    assert options.storage == repo_root / "storage"

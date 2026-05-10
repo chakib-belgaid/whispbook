@@ -376,8 +376,7 @@ function App() {
     Record<string, ChapterEditHistory>
   >({});
   const [customName, setCustomName] = useState("");
-  const [customEngine, setCustomEngine] =
-    useState<EngineName>(defaultTtsModel);
+  const [customEngine, setCustomEngine] = useState<EngineName>(defaultTtsModel);
   const [customParams, setCustomParams] = useState(
     '{"speed": 0.95, "exaggeration": 0.65, "cfg_weight": 0.35}',
   );
@@ -922,6 +921,61 @@ function App() {
     setSelectedAnnotationRange(null);
   }
 
+  function assignSelectedRangeToStyle(
+    chapterId: string,
+    paragraphId: string,
+    style: VoiceStyle,
+  ): void {
+    const selection = selectedAnnotationRange;
+    if (
+      !selection ||
+      selection.paragraphId !== paragraphId ||
+      selection.start === selection.end
+    ) {
+      return;
+    }
+    const existingMember = book?.cast.find(
+      (member) => member.style_id === style.id,
+    );
+    const castId = existingMember?.id ?? `saved-${style.id}`;
+    const nextMember: CastMember = existingMember ?? {
+      id: castId,
+      name: style.name,
+      style_id: style.id,
+      color:
+        castColorPalette[(book?.cast.length ?? 0) % castColorPalette.length],
+    };
+
+    setSelectedCastId(castId);
+    updateBook((current) => ({
+      ...current,
+      cast: current.cast.some((member) => member.id === castId)
+        ? current.cast
+        : [...current.cast, nextMember],
+      chapters: current.chapters.map((chapter) =>
+        chapter.id === chapterId
+          ? {
+              ...chapter,
+              paragraphs: chapter.paragraphs.map((paragraph) =>
+                paragraph.id === paragraphId
+                  ? {
+                      ...paragraph,
+                      voice_ranges: assignVoiceRange(
+                        paragraph.voice_ranges,
+                        selection.start,
+                        selection.end,
+                        castId,
+                      ),
+                    }
+                  : paragraph,
+              ),
+            }
+          : chapter,
+      ),
+    }));
+    setSelectedAnnotationRange(null);
+  }
+
   function removeVoiceRange(
     chapterId: string,
     paragraphId: string,
@@ -1112,11 +1166,10 @@ function App() {
     styleDraft.language,
   );
   const activeEngineSettings = settingsForEngine(activeEngine);
-  const voicePresetStyles = styles;
-
-  const selectedStyleName =
-    voicePresetStyles.find((style) => style.id === styleDraft.style_id)?.name ??
-    "Manual";
+  const savedVoiceStyles = styles.filter((style) => style.custom);
+  const characterVoiceStyles = savedVoiceStyles.filter(
+    (style) => style.engine === "chatterbox_turbo",
+  );
   const isImporting = busy?.startsWith("Importing") ?? false;
 
   return (
@@ -1147,8 +1200,6 @@ function App() {
         </label>
         <span aria-hidden="true">|</span>
         <span>Audio export: {health?.ffmpeg ? "Ready" : "Unavailable"}</span>
-        <span aria-hidden="true">|</span>
-        <span>Voice: {selectedStyleName}</span>
         <button
           className="status-config-button"
           type="button"
@@ -1505,6 +1556,7 @@ function App() {
                                   enabled={
                                     styleDraft.engine === "chatterbox_turbo"
                                   }
+                                  savedVoiceStyles={characterVoiceStyles}
                                   tags={
                                     capabilities?.chatterbox_turbo
                                       ?.paralinguistic_tags ?? []
@@ -1517,6 +1569,13 @@ function App() {
                                       activeChapter.id,
                                       paragraph.id,
                                       castId,
+                                    )
+                                  }
+                                  onAssignToStyle={(style) =>
+                                    assignSelectedRangeToStyle(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      style,
                                     )
                                   }
                                   onRemoveRange={(rangeId) =>
@@ -1612,13 +1671,13 @@ function App() {
                 <section className="settings-section ritual-section custom-style-section">
                   <div className="settings-heading">
                     <Wand2 size={19} aria-hidden="true" />
-                    <h2>Voice presets</h2>
+                    <h2>Saved voices</h2>
                   </div>
-                  {voicePresetStyles.length > 0 && (
+                  {savedVoiceStyles.length > 0 && (
                     <SelectField
-                      label="Saved voice preset"
+                      label="Saved voice"
                       value={
-                        voicePresetStyles.some(
+                        savedVoiceStyles.some(
                           (style) => style.id === styleDraft.style_id,
                         )
                           ? styleDraft.style_id
@@ -1633,7 +1692,7 @@ function App() {
                           setPreviewUrl(null);
                           return;
                         }
-                        const next = voicePresetStyles.find(
+                        const next = savedVoiceStyles.find(
                           (style) => style.id === styleId,
                         );
                         if (next) {
@@ -1648,7 +1707,7 @@ function App() {
                       }}
                     >
                       <option value="">Current settings</option>
-                      {voicePresetStyles.map((style) => (
+                      {savedVoiceStyles.map((style) => (
                         <option key={style.id} value={style.id}>
                           {style.name}
                         </option>
@@ -1756,9 +1815,7 @@ function App() {
                   <div className="model-primary-controls">
                     <SelectField
                       label="Narrator"
-                      value={
-                        styleDraft.voice ?? voiceOptions[0]?.value ?? ""
-                      }
+                      value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
                       disabled={voiceOptions.length === 0}
                       onChange={(voice) =>
                         setStyleDraft((current) => ({
@@ -1777,9 +1834,7 @@ function App() {
                       <SelectField
                         label="Language"
                         value={
-                          styleDraft.language ??
-                          languageOptions[0]?.value ??
-                          ""
+                          styleDraft.language ?? languageOptions[0]?.value ?? ""
                         }
                         disabled={languageOptions.length === 0}
                         onChange={(language) =>
@@ -1988,11 +2043,13 @@ function ParagraphInspector({
   paragraph,
   cast,
   enabled,
+  savedVoiceStyles,
   tags,
   selectedRange,
   selectedCastId,
   customTag,
   onAssignToCast,
+  onAssignToStyle,
   onRemoveRange,
   onInsertTag,
   onCustomTagChange,
@@ -2000,11 +2057,13 @@ function ParagraphInspector({
   paragraph: Paragraph;
   cast: CastMember[];
   enabled: boolean;
+  savedVoiceStyles: VoiceStyle[];
   tags: string[];
   selectedRange: TextSelectionRange | null;
   selectedCastId: string;
   customTag: string;
   onAssignToCast: (castId: string) => void;
+  onAssignToStyle: (style: VoiceStyle) => void;
   onRemoveRange: (rangeId: string) => void;
   onInsertTag: (tag: string) => void;
   onCustomTagChange: (value: string) => void;
@@ -2032,6 +2091,11 @@ function ParagraphInspector({
     (tag) => tag.toLowerCase() === normalizedCustomTag.toLowerCase(),
   );
   const castById = new Map(cast.map((member) => [member.id, member]));
+  const castStyleIds = new Set(cast.map((member) => member.style_id));
+  const savedVoiceChoices = savedVoiceStyles.filter(
+    (style) => !castStyleIds.has(style.id),
+  );
+  const hasVoiceChoices = cast.length > 0 || savedVoiceChoices.length > 0;
 
   useEffect(() => {
     if (!activeCursor) {
@@ -2067,7 +2131,7 @@ function ParagraphInspector({
                 <span>{selectedCharacterCount} chars selected</span>
                 <strong>Available voices</strong>
               </div>
-              {cast.length > 0 ? (
+              {hasVoiceChoices ? (
                 <div
                   className="voice-choice-list"
                   aria-label="Available character voices"
@@ -2090,6 +2154,22 @@ function ParagraphInspector({
                         aria-hidden="true"
                       />
                       <span>{member.name}</span>
+                    </button>
+                  ))}
+                  {savedVoiceChoices.map((style) => (
+                    <button
+                      key={style.id}
+                      type="button"
+                      className="voice-choice"
+                      data-style-id={style.id}
+                      onClick={() => onAssignToStyle(style)}
+                    >
+                      <span
+                        className="cast-swatch"
+                        style={{ backgroundColor: "#55a7a2" }}
+                        aria-hidden="true"
+                      />
+                      <span>{style.name}</span>
                     </button>
                   ))}
                 </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.error
@@ -15,9 +16,14 @@ from typing import Literal
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
+DEFAULT_STORAGE_ROOT = (
+    Path(os.environ.get("WHISPBOOK_STORAGE", BACKEND_ROOT.parent / "storage"))
+    .expanduser()
+    .resolve()
+)
 
-from app import ffmpeg
-from app.models import VoiceStyle
+from app import ffmpeg  # noqa: E402
+from app.models import VoiceStyle  # noqa: E402
 
 
 SourceName = Literal["librivox"]
@@ -323,7 +329,7 @@ def parse_args() -> ImportOptions:
     parser.add_argument("--language", default="en")
     parser.add_argument("--start", type=float, default=0.0)
     parser.add_argument("--duration", type=float, default=12.0)
-    parser.add_argument("--storage", type=Path, default=Path("storage"))
+    parser.add_argument("--storage", type=Path, default=DEFAULT_STORAGE_ROOT)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.start < 0:

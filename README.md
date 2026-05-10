@@ -74,13 +74,13 @@ The frontend runs on `http://localhost:5173` and the API runs on `http://localho
 
 ## Configuration
 
-| Variable                    | Used by                | Purpose                                                                                              |
-| --------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| `WHISPBOOK_API_URL`         | Frontend dev server    | Overrides the Vite proxy target for `/api` and `/media`.                                             |
-| `WHISPBOOK_STORAGE`         | Backend                | Sets the storage root for books, styles, previews, jobs, and generated media. Defaults to `storage`. |
-| `HF_HOME`                   | Hugging Face libraries | Moves the Hugging Face model cache away from the default `~/.cache/huggingface`.                     |
-| `HF_TOKEN`                  | Hugging Face libraries | Authenticates model downloads when needed.                                                           |
-| `WHISPBOOK_ENABLE_MOCK_TTS` | Backend                | Enables the mock sine-wave TTS engine for local smoke tests when set to `1`.                         |
+| Variable                    | Used by                | Purpose                                                                                                                        |
+| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `WHISPBOOK_API_URL`         | Frontend dev server    | Overrides the Vite proxy target for `/api` and `/media`.                                                                       |
+| `WHISPBOOK_STORAGE`         | Backend                | Sets the storage root for books, styles, previews, jobs, and generated media. Defaults to the repository `storage/` directory. |
+| `HF_HOME`                   | Hugging Face libraries | Moves the Hugging Face model cache away from the default `~/.cache/huggingface`.                                               |
+| `HF_TOKEN`                  | Hugging Face libraries | Authenticates model downloads when needed.                                                                                     |
+| `WHISPBOOK_ENABLE_MOCK_TTS` | Backend                | Enables the mock sine-wave TTS engine for local smoke tests when set to `1`.                                                   |
 
 Whispbook does not currently wire a separate model-based annotation provider. Subtitle text and exported generation scripts use the imported and edited book state from the app.
 
