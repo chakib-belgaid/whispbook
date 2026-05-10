@@ -17,6 +17,7 @@ Whispbook is a self-hosted audiobook studio for readers, writers, and audiobook 
 - Preview a single paragraph before rendering a full book.
 - Use Kokoro, Chatterbox, Chatterbox Turbo, or a local mock TTS engine.
 - Import custom narration styles from JSON and optional reference audio.
+- Use Chatterbox Turbo character casts, highlighted voice ranges, and inline paralinguistic tags such as `[laugh]` or `[breath]`.
 - Export a Python generation script that snapshots current book edits and TTS settings.
 - Generate per-chapter `.m4a` files with `.vtt` and `.srt` subtitles.
 - Build a final `.m4b` audiobook with chapter metadata, embedded `mov_text` subtitles, and sidecar subtitle files.
@@ -147,9 +148,10 @@ Imports are local uploads only. URL import, ZIP import, audio/video transcriptio
 3. Select the active book and review the detected chapters.
 4. Edit paragraph text, exclude paragraphs that should not be spoken, and select the chapters to include.
 5. Choose a narration source, voice, language, pacing, and advanced style settings.
-6. Use **Listen to sample** to preview the selected paragraph.
-7. Use **Create audiobook** to start background generation.
-8. Download chapter audio, subtitles, and the final audiobook package from the render panel.
+6. For Chatterbox Turbo, import character voices, assign selected paragraph text to cast members, and insert paralinguistic tags from the paragraph inspector.
+7. Use **Listen to sample** to preview the selected paragraph.
+8. Use **Create audiobook** to start background generation.
+9. Download chapter audio, subtitles, and the final audiobook package from the render panel.
 
 ## Custom Styles
 
@@ -172,6 +174,8 @@ Custom style JSON can include narration metadata and engine parameters:
 ```
 
 For Chatterbox styles, upload a 5-10 second reference clip when you want the style to follow a known external voice or narration sample.
+
+Chatterbox Turbo also supports book-local character casts. Cast entries point to saved Turbo styles, while paragraph voice assignments are stored as highlighted text ranges. Paralinguistic tags stay inline in the paragraph text for TTS guidance, and generated subtitles omit those tags.
 
 ## Exported Generation Scripts
 

@@ -25,6 +25,7 @@ export function selectedGenerationChapterIds(book: Book): string[] {
 export function buildBookPatchSnapshot(book: Book) {
   return {
     title: book.title,
+    cast: book.cast,
     chapters: book.chapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,
@@ -33,6 +34,7 @@ export function buildBookPatchSnapshot(book: Book) {
         id: paragraph.id,
         text: paragraph.text,
         included: paragraph.included,
+        voice_ranges: paragraph.voice_ranges,
       })),
     })),
   };

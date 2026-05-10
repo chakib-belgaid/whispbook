@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import {
@@ -62,6 +63,7 @@ import {
 } from "./lib/generationScript";
 import type {
   Book,
+  CastMember,
   Chapter,
   EngineCapabilities,
   EngineName,
@@ -71,6 +73,7 @@ import type {
   StyleOverride,
   TTSCapabilities,
   VoiceStyle,
+  VoiceRange,
 } from "./types";
 
 const defaultStyleDraft: StyleOverride = {
@@ -89,6 +92,15 @@ const defaultStyleDraft: StyleOverride = {
 };
 
 const storedStyleDraftKey = "whispbook.styleDraft";
+
+const castColorPalette = [
+  "#5f9ed1",
+  "#d17a5f",
+  "#66a96f",
+  "#b879d6",
+  "#d1a45f",
+  "#55a7a2",
+];
 
 const documentImportAccept = [
   "application/pdf",
@@ -142,6 +154,7 @@ interface ChapterEditSnapshot {
     id: string;
     text: string;
     included: boolean;
+    voice_ranges: VoiceRange[];
   }>;
 }
 
@@ -164,6 +177,12 @@ interface EngineSettingsConfig {
   language: boolean;
   promptPrefix: boolean;
   ranges: RangeSettingConfig[];
+}
+
+interface TextSelectionRange {
+  paragraphId: string;
+  start: number;
+  end: number;
 }
 
 const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
@@ -326,6 +345,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
 function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const styleReferenceRef = useRef<HTMLInputElement | null>(null);
+  const castVoiceInputRef = useRef<HTMLInputElement | null>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [styles, setStyles] = useState<VoiceStyle[]>([]);
@@ -360,6 +380,10 @@ function App() {
   const [customReferenceStartSeconds, setCustomReferenceStartSeconds] =
     useState(0);
   const [activePane, setActivePane] = useState<WorkbenchPane>("manuscript");
+  const [selectedAnnotationRange, setSelectedAnnotationRange] =
+    useState<TextSelectionRange | null>(null);
+  const [selectedCastId, setSelectedCastId] = useState("");
+  const [customTag, setCustomTag] = useState("");
 
   useEffect(() => {
     void boot();
@@ -427,6 +451,19 @@ function App() {
       null
     );
   }, [activeChapter, selectedParagraphId]);
+
+  useEffect(() => {
+    setSelectedAnnotationRange(null);
+  }, [selectedParagraph?.id]);
+
+  useEffect(() => {
+    const firstCastId = book?.cast[0]?.id ?? "";
+    setSelectedCastId((current) =>
+      current && book?.cast.some((member) => member.id === current)
+        ? current
+        : firstCastId,
+    );
+  }, [book?.cast]);
 
   const activeHistory = activeChapter ? chapterHistory[activeChapter.id] : null;
   const canUndoChapter = Boolean(activeHistory?.past.length);
@@ -602,6 +639,8 @@ function App() {
         selectedParagraph.text,
         styleDraft,
         selectedParagraph.text,
+        book.cast,
+        selectedParagraph.voice_ranges,
       );
       setPreviewUrl(preview.audio_url);
     } catch (caught) {
@@ -756,6 +795,171 @@ function App() {
         styleReferenceRef.current.value = "";
       }
     }
+  }
+
+  async function handleCastVoiceImport(
+    fileList: FileList | null,
+  ): Promise<void> {
+    const files = Array.from(fileList ?? []);
+    if (castVoiceInputRef.current) {
+      castVoiceInputRef.current.value = "";
+    }
+    if (files.length === 0) {
+      return;
+    }
+
+    setBusy("Importing cast");
+    setError(null);
+    try {
+      const createdMembers: CastMember[] = [];
+      for (const file of files) {
+        const name = characterNameFromFilename(file.name);
+        const created = await createCustomStyle({
+          name,
+          engine: "chatterbox_turbo",
+          paramsJson: JSON.stringify({
+            description: `Character voice for ${name}`,
+            voice: "reference",
+            language: "en",
+          }),
+          referenceAudio: file,
+          referenceStartSeconds: 0,
+        });
+        setStyles((current) => [
+          created,
+          ...current.filter((style) => style.id !== created.id),
+        ]);
+        createdMembers.push({
+          id: crypto.randomUUID(),
+          name,
+          style_id: created.id,
+          color:
+            castColorPalette[
+              ((book?.cast.length ?? 0) + createdMembers.length) %
+                castColorPalette.length
+            ],
+        });
+      }
+      if (createdMembers.length > 0) {
+        updateBook((current) => ({
+          ...current,
+          cast: [...current.cast, ...createdMembers],
+        }));
+        setSelectedCastId(createdMembers[0].id);
+      }
+    } catch (caught) {
+      setError(
+        `Could not import character voices: ${messageFromError(caught)}`,
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function updateCastMemberName(memberId: string, name: string): void {
+    updateBook((current) => ({
+      ...current,
+      cast: current.cast.map((member) =>
+        member.id === memberId ? { ...member, name } : member,
+      ),
+    }));
+  }
+
+  function removeCastMember(memberId: string): void {
+    updateBook((current) => ({
+      ...current,
+      cast: current.cast.filter((member) => member.id !== memberId),
+      chapters: current.chapters.map((chapter) => ({
+        ...chapter,
+        paragraphs: chapter.paragraphs.map((paragraph) => ({
+          ...paragraph,
+          voice_ranges: paragraph.voice_ranges.filter(
+            (range) => range.cast_id !== memberId,
+          ),
+        })),
+      })),
+    }));
+    setSelectedCastId((current) => (current === memberId ? "" : current));
+  }
+
+  function updateAnnotationSelection(
+    paragraphId: string,
+    event: ReactMouseEvent<HTMLElement>,
+  ): void {
+    const range = selectionRangeWithin(event.currentTarget);
+    setSelectedAnnotationRange(range ? { paragraphId, ...range } : null);
+  }
+
+  function assignSelectedRangeToCast(
+    chapterId: string,
+    paragraphId: string,
+  ): void {
+    const selection = selectedAnnotationRange;
+    if (
+      !selection ||
+      selection.paragraphId !== paragraphId ||
+      selection.start === selection.end ||
+      !selectedCastId
+    ) {
+      return;
+    }
+    updateParagraph(chapterId, paragraphId, (current) => ({
+      ...current,
+      voice_ranges: assignVoiceRange(
+        current.voice_ranges,
+        selection.start,
+        selection.end,
+        selectedCastId,
+      ),
+    }));
+    setSelectedAnnotationRange(null);
+  }
+
+  function removeVoiceRange(
+    chapterId: string,
+    paragraphId: string,
+    rangeId: string,
+  ): void {
+    updateParagraph(chapterId, paragraphId, (current) => ({
+      ...current,
+      voice_ranges: current.voice_ranges.filter(
+        (range) => range.id !== rangeId,
+      ),
+    }));
+  }
+
+  function insertTagIntoParagraph(
+    chapterId: string,
+    paragraphId: string,
+    tag: string,
+  ): void {
+    const normalizedTag = normalizeTag(tag);
+    updateParagraph(chapterId, paragraphId, (current) => {
+      const insertion = insertionRangeForParagraph(
+        selectedAnnotationRange,
+        paragraphId,
+        current.text.length,
+      );
+      return insertTextAtRange(
+        current,
+        insertion.start,
+        insertion.end,
+        `${normalizedTag} `,
+      );
+    });
+    setSelectedAnnotationRange(null);
+  }
+
+  function insertCustomTagIntoParagraph(
+    chapterId: string,
+    paragraphId: string,
+  ): void {
+    const normalizedTag = normalizeTag(customTag);
+    if (!normalizedTag) {
+      return;
+    }
+    insertTagIntoParagraph(chapterId, paragraphId, normalizedTag);
+    setCustomTag("");
   }
 
   function updateCustomReferenceStartSeconds(value: string): void {
@@ -1224,10 +1428,69 @@ function App() {
                                   updateParagraph(
                                     activeChapter.id,
                                     paragraph.id,
-                                    (current) => ({ ...current, text }),
+                                    (current) => ({
+                                      ...current,
+                                      text,
+                                      voice_ranges:
+                                        reconcileVoiceRangesAfterTextEdit(
+                                          current.text,
+                                          text,
+                                          current.voice_ranges,
+                                        ),
+                                    }),
                                   );
                                 }}
                               />
+                              {paragraph.id === selectedParagraph?.id && (
+                                <ParagraphInspector
+                                  paragraph={paragraph}
+                                  cast={book.cast}
+                                  enabled={
+                                    styleDraft.engine === "chatterbox_turbo"
+                                  }
+                                  tags={
+                                    capabilities?.chatterbox_turbo
+                                      ?.paralinguistic_tags ?? []
+                                  }
+                                  selectedRange={selectedAnnotationRange}
+                                  selectedCastId={selectedCastId}
+                                  customTag={customTag}
+                                  onPreviewSelection={(event) =>
+                                    updateAnnotationSelection(
+                                      paragraph.id,
+                                      event,
+                                    )
+                                  }
+                                  onCastChange={setSelectedCastId}
+                                  onAssign={() =>
+                                    assignSelectedRangeToCast(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                    )
+                                  }
+                                  onRemoveRange={(rangeId) =>
+                                    removeVoiceRange(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      rangeId,
+                                    )
+                                  }
+                                  onInsertTag={(tag) =>
+                                    insertTagIntoParagraph(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      tag,
+                                    )
+                                  }
+                                  onCustomTagChange={setCustomTag}
+                                  onInsertCustomTag={() =>
+                                    insertCustomTagIntoParagraph(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                    )
+                                  }
+                                />
+                              )}
                             </div>
                             {paragraph.id === selectedParagraph?.id && (
                               <div
@@ -1367,6 +1630,63 @@ function App() {
                     </button>
                     <small>JSON, .whisp, or audio file.</small>
                   </div>
+                  {styleDraft.engine === "chatterbox_turbo" && (
+                    <div className="cast-import-panel">
+                      <input
+                        ref={castVoiceInputRef}
+                        className="visually-hidden"
+                        type="file"
+                        multiple
+                        accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                        aria-label="Import character voice files"
+                        onChange={(event) =>
+                          void handleCastVoiceImport(event.currentTarget.files)
+                        }
+                      />
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => castVoiceInputRef.current?.click()}
+                      >
+                        <Upload size={18} />
+                        <span>Import character voices</span>
+                      </button>
+                      {book.cast.length > 0 && (
+                        <div className="cast-list" aria-label="Character cast">
+                          {book.cast.map((member) => (
+                            <div className="cast-row" key={member.id}>
+                              <span
+                                className="cast-swatch"
+                                style={{ backgroundColor: member.color }}
+                                aria-hidden="true"
+                              />
+                              <label className="field">
+                                <span>Character name</span>
+                                <input
+                                  value={member.name}
+                                  onChange={(event) =>
+                                    updateCastMemberName(
+                                      member.id,
+                                      event.currentTarget.value,
+                                    )
+                                  }
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${member.name}`}
+                                title={`Remove ${member.name}`}
+                                onClick={() => removeCastMember(member.id)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {(customReference || customName.trim()) && (
                     <RitualDrawer
                       title="Custom voice details"
@@ -1646,6 +1966,162 @@ function App() {
         />
       )}
     </main>
+  );
+}
+
+function ParagraphInspector({
+  paragraph,
+  cast,
+  enabled,
+  tags,
+  selectedRange,
+  selectedCastId,
+  customTag,
+  onPreviewSelection,
+  onCastChange,
+  onAssign,
+  onRemoveRange,
+  onInsertTag,
+  onCustomTagChange,
+  onInsertCustomTag,
+}: {
+  paragraph: Paragraph;
+  cast: CastMember[];
+  enabled: boolean;
+  tags: string[];
+  selectedRange: TextSelectionRange | null;
+  selectedCastId: string;
+  customTag: string;
+  onPreviewSelection: (event: ReactMouseEvent<HTMLElement>) => void;
+  onCastChange: (castId: string) => void;
+  onAssign: () => void;
+  onRemoveRange: (rangeId: string) => void;
+  onInsertTag: (tag: string) => void;
+  onCustomTagChange: (value: string) => void;
+  onInsertCustomTag: () => void;
+}) {
+  const activeSelection =
+    selectedRange?.paragraphId === paragraph.id &&
+    selectedRange.start !== selectedRange.end
+      ? selectedRange
+      : null;
+  const selectedText = activeSelection
+    ? paragraph.text.slice(activeSelection.start, activeSelection.end)
+    : "";
+  const castById = new Map(cast.map((member) => [member.id, member]));
+
+  return (
+    <section
+      className={
+        enabled ? "paragraph-inspector" : "paragraph-inspector is-disabled"
+      }
+      aria-label="Chatterbox Turbo paragraph inspector"
+    >
+      <div
+        className="annotation-preview"
+        data-testid="paragraph-annotation-preview"
+        onMouseUp={enabled ? onPreviewSelection : undefined}
+      >
+        {renderAnnotatedPreview(paragraph, cast)}
+      </div>
+      <p className="annotation-hint">Default narrator remains plain.</p>
+      {enabled ? (
+        <>
+          <div className="annotation-controls">
+            <label className="field">
+              <span>Selected text</span>
+              <input
+                readOnly
+                value={selectedText || "Select text in the preview"}
+              />
+            </label>
+            <SelectField
+              label="Character voice"
+              value={selectedCastId}
+              disabled={cast.length === 0}
+              onChange={onCastChange}
+            >
+              <option value="">Choose character</option>
+              {cast.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </SelectField>
+            <button
+              className="secondary-action"
+              type="button"
+              disabled={!activeSelection || !selectedCastId}
+              onClick={onAssign}
+            >
+              <Check size={17} />
+              <span>Assign voice</span>
+            </button>
+          </div>
+          <div className="tag-chip-row" aria-label="Paralinguistic tags">
+            {tags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className="tag-chip"
+                onClick={() => onInsertTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+            <label className="custom-tag-field">
+              <span>Custom tag</span>
+              <input
+                value={customTag}
+                placeholder="[custom]"
+                onChange={(event) =>
+                  onCustomTagChange(event.currentTarget.value)
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="tag-chip"
+              onClick={onInsertCustomTag}
+            >
+              Insert custom
+            </button>
+          </div>
+          {paragraph.voice_ranges.length > 0 && (
+            <div className="range-list" aria-label="Assigned voice ranges">
+              {paragraph.voice_ranges.map((range) => {
+                const member = castById.get(range.cast_id);
+                return (
+                  <div className="range-row" key={range.id}>
+                    <span
+                      className="cast-swatch"
+                      style={{ backgroundColor: member?.color ?? "#8a8a8a" }}
+                      aria-hidden="true"
+                    />
+                    <span>
+                      {member?.name ?? "Unknown"}:{" "}
+                      {paragraph.text.slice(range.start, range.end)}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove range for ${member?.name ?? "Unknown"}`}
+                      onClick={() => onRemoveRange(range.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="annotation-hint">
+          Switch narration source to Chatterbox Turbo to assign character voices
+          and insert tags.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -2115,6 +2591,70 @@ function StatusBadge({
   return <em className={`status-badge status-${status}`}>{label}</em>;
 }
 
+function renderAnnotatedPreview(
+  paragraph: Paragraph,
+  cast: CastMember[],
+): ReactNode[] {
+  const castById = new Map(cast.map((member) => [member.id, member]));
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const range of [...paragraph.voice_ranges].sort(
+    (first, second) => first.start - second.start,
+  )) {
+    if (range.start > cursor) {
+      nodes.push(
+        ...renderTaggedText(
+          paragraph.text.slice(cursor, range.start),
+          `plain-${cursor}`,
+        ),
+      );
+    }
+    const member = castById.get(range.cast_id);
+    const rangeText = paragraph.text.slice(range.start, range.end);
+    if (member) {
+      nodes.push(
+        <span
+          key={range.id}
+          className="voice-highlight"
+          style={
+            {
+              backgroundColor: `${member.color}33`,
+              borderBottomColor: member.color,
+            } as CSSProperties
+          }
+          title={member.name}
+        >
+          {renderTaggedText(rangeText, range.id)}
+        </span>,
+      );
+    } else {
+      nodes.push(...renderTaggedText(rangeText, range.id));
+    }
+    cursor = range.end;
+  }
+  if (cursor < paragraph.text.length) {
+    nodes.push(
+      ...renderTaggedText(paragraph.text.slice(cursor), `plain-${cursor}`),
+    );
+  }
+  return nodes.length > 0 ? nodes : [<span key="empty">&nbsp;</span>];
+}
+
+function renderTaggedText(text: string, keyPrefix: string): ReactNode[] {
+  const parts = text.split(/(\[[A-Za-z][A-Za-z0-9 _-]{0,40}\])/g);
+  return parts
+    .filter((part) => part.length > 0)
+    .map((part, index) =>
+      /^\[[A-Za-z][A-Za-z0-9 _-]{0,40}\]$/.test(part) ? (
+        <span className="tag-highlight" key={`${keyPrefix}-tag-${index}`}>
+          {part}
+        </span>
+      ) : (
+        <span key={`${keyPrefix}-text-${index}`}>{part}</span>
+      ),
+    );
+}
+
 function formatParagraphNumber(index: number): string {
   return String(index + 1).padStart(3, "0");
 }
@@ -2390,6 +2930,7 @@ function chapterEditSnapshot(chapter: Chapter): ChapterEditSnapshot {
       id: paragraph.id,
       text: paragraph.text,
       included: paragraph.included,
+      voice_ranges: paragraph.voice_ranges,
     })),
   };
 }
@@ -2412,6 +2953,7 @@ function restoreChapterEditSnapshot(
             ...paragraph,
             text: paragraphSnapshot.text,
             included: paragraphSnapshot.included,
+            voice_ranges: paragraphSnapshot.voice_ranges,
           }
         : paragraph;
     }),
@@ -2435,9 +2977,168 @@ function chapterSnapshotEquals(
     return (
       paragraph.id === comparison.id &&
       paragraph.text === comparison.text &&
-      paragraph.included === comparison.included
+      paragraph.included === comparison.included &&
+      JSON.stringify(paragraph.voice_ranges) ===
+        JSON.stringify(comparison.voice_ranges)
     );
   });
+}
+
+function characterNameFromFilename(filename: string): string {
+  return filename
+    .replace(/\.[^.]+$/, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeTag(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.startsWith("[") && trimmed.endsWith("]")
+    ? trimmed
+    : `[${trimmed.replace(/^\[|\]$/g, "")}]`;
+}
+
+function selectionRangeWithin(
+  root: HTMLElement,
+): { start: number; end: number } | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return null;
+  }
+  const range = selection.getRangeAt(0);
+  if (
+    !root.contains(range.startContainer) ||
+    !root.contains(range.endContainer)
+  ) {
+    return null;
+  }
+  const start = textOffsetWithin(root, range.startContainer, range.startOffset);
+  const end = textOffsetWithin(root, range.endContainer, range.endOffset);
+  return start < end ? { start, end } : { start: end, end: start };
+}
+
+function textOffsetWithin(
+  root: HTMLElement,
+  node: Node,
+  offset: number,
+): number {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let count = 0;
+  let current = walker.nextNode();
+  while (current) {
+    if (current === node) {
+      return count + offset;
+    }
+    count += current.textContent?.length ?? 0;
+    current = walker.nextNode();
+  }
+  return count;
+}
+
+function assignVoiceRange(
+  ranges: VoiceRange[],
+  start: number,
+  end: number,
+  castId: string,
+): VoiceRange[] {
+  const normalizedStart = Math.min(start, end);
+  const normalizedEnd = Math.max(start, end);
+  return [
+    ...ranges.filter(
+      (range) => range.end <= normalizedStart || range.start >= normalizedEnd,
+    ),
+    {
+      id: crypto.randomUUID(),
+      start: normalizedStart,
+      end: normalizedEnd,
+      cast_id: castId,
+    },
+  ].sort((first, second) => first.start - second.start);
+}
+
+function insertionRangeForParagraph(
+  selection: TextSelectionRange | null,
+  paragraphId: string,
+  fallbackOffset: number,
+): { start: number; end: number } {
+  if (selection?.paragraphId === paragraphId) {
+    return { start: selection.end, end: selection.end };
+  }
+  return { start: fallbackOffset, end: fallbackOffset };
+}
+
+function insertTextAtRange(
+  paragraph: Paragraph,
+  start: number,
+  end: number,
+  insertion: string,
+): Paragraph {
+  const nextText =
+    paragraph.text.slice(0, start) + insertion + paragraph.text.slice(end);
+  return {
+    ...paragraph,
+    text: nextText,
+    voice_ranges: reconcileVoiceRangesAfterTextEdit(
+      paragraph.text,
+      nextText,
+      paragraph.voice_ranges,
+    ),
+  };
+}
+
+function reconcileVoiceRangesAfterTextEdit(
+  previousText: string,
+  nextText: string,
+  ranges: VoiceRange[],
+): VoiceRange[] {
+  if (previousText === nextText || ranges.length === 0) {
+    return ranges;
+  }
+  let prefix = 0;
+  while (
+    prefix < previousText.length &&
+    prefix < nextText.length &&
+    previousText[prefix] === nextText[prefix]
+  ) {
+    prefix += 1;
+  }
+
+  let suffix = 0;
+  while (
+    suffix < previousText.length - prefix &&
+    suffix < nextText.length - prefix &&
+    previousText[previousText.length - 1 - suffix] ===
+      nextText[nextText.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+
+  const previousEditEnd = previousText.length - suffix;
+  const nextEditEnd = nextText.length - suffix;
+  const delta = nextText.length - previousText.length;
+
+  function mapOffset(offset: number): number {
+    if (offset <= prefix) {
+      return offset;
+    }
+    if (offset >= previousEditEnd) {
+      return offset + delta;
+    }
+    return nextEditEnd;
+  }
+
+  return ranges
+    .map((range) => ({
+      ...range,
+      start: Math.max(0, Math.min(nextText.length, mapOffset(range.start))),
+      end: Math.max(0, Math.min(nextText.length, mapOffset(range.end))),
+    }))
+    .filter((range) => range.start < range.end);
 }
 
 function messageFromError(error: unknown): string {

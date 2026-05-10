@@ -10,12 +10,27 @@ EngineName = Literal["kokoro", "chatterbox", "chatterbox_turbo", "mock"]
 JobStatus = Literal["queued", "running", "done", "error"]
 
 
+class VoiceRange(BaseModel):
+    id: str
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    cast_id: str
+
+
+class CastMember(BaseModel):
+    id: str
+    name: str
+    style_id: str
+    color: str
+
+
 class Paragraph(BaseModel):
     id: str
     index: int
     original_text: str
     text: str
     included: bool = True
+    voice_ranges: List[VoiceRange] = Field(default_factory=list)
 
 
 class Chapter(BaseModel):
@@ -38,6 +53,7 @@ class Book(BaseModel):
     filename: str
     created_at: float
     updated_at: float
+    cast: List[CastMember] = Field(default_factory=list)
     chapters: List[Chapter]
     final_audio_url: Optional[str] = None
     final_vtt_url: Optional[str] = None
@@ -49,6 +65,7 @@ class ParagraphPatch(BaseModel):
     id: str
     text: str
     included: bool
+    voice_ranges: List[VoiceRange] = Field(default_factory=list)
 
 
 class ChapterPatch(BaseModel):
@@ -60,6 +77,7 @@ class ChapterPatch(BaseModel):
 
 class BookPatch(BaseModel):
     title: Optional[str] = None
+    cast: List[CastMember] = Field(default_factory=list)
     chapters: List[ChapterPatch] = Field(default_factory=list)
 
 
@@ -96,6 +114,7 @@ class EngineCapabilities(BaseModel):
     engine: EngineName
     voices: List[TTSVoiceOption]
     languages: List[TTSOption]
+    paralinguistic_tags: List[str] = Field(default_factory=list)
 
 
 class StyleOverride(BaseModel):
@@ -117,6 +136,8 @@ class PreviewRequest(BaseModel):
     text: str
     style: StyleOverride
     subtitle_text: Optional[str] = None
+    cast: List[CastMember] = Field(default_factory=list)
+    voice_ranges: List[VoiceRange] = Field(default_factory=list)
 
 
 class PreviewResponse(BaseModel):

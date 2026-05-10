@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import ffmpeg
 from .capabilities import tts_capabilities
-from .jobs import JobRunner, merge_style
+from .jobs import JobRunner, merge_style, render_annotated_paragraph, strip_paralinguistic_tags, validate_voice_ranges
 from .models import (
     Book,
     BookPatch,
@@ -21,6 +21,7 @@ from .models import (
     GenerateJob,
     GenerateRequest,
     HealthResponse,
+    Paragraph,
     PreviewRequest,
     PreviewResponse,
     VoiceStyle,
@@ -213,13 +214,16 @@ def update_book(book_id: str, patch: BookPatch) -> Book:
     book = load_or_404(book_id)
     if patch.title is not None:
         book.title = patch.title.strip() or book.title
+    cast_changed = book.cast != patch.cast
+    book.cast = patch.cast
 
     chapters_by_id = {chapter.id: chapter for chapter in book.chapters}
+    cast_ids = {member.id for member in book.cast}
     for chapter_patch in patch.chapters:
         chapter = chapters_by_id.get(chapter_patch.id)
         if chapter is None:
             continue
-        content_changed = chapter.title != chapter_patch.title or chapter.selected != chapter_patch.selected
+        content_changed = cast_changed or chapter.title != chapter_patch.title or chapter.selected != chapter_patch.selected
         chapter.title = chapter_patch.title.strip() or chapter.title
         chapter.selected = chapter_patch.selected
         paragraphs_by_id = {paragraph.id: paragraph for paragraph in chapter.paragraphs}
@@ -227,10 +231,18 @@ def update_book(book_id: str, patch: BookPatch) -> Book:
             paragraph = paragraphs_by_id.get(paragraph_patch.id)
             if paragraph is None:
                 continue
-            if paragraph.text != paragraph_patch.text or paragraph.included != paragraph_patch.included:
+            errors = validate_voice_ranges(paragraph_patch.text.strip(), paragraph_patch.voice_ranges, cast_ids)
+            if errors:
+                raise HTTPException(status_code=422, detail=" ".join(errors))
+            if (
+                paragraph.text != paragraph_patch.text
+                or paragraph.included != paragraph_patch.included
+                or paragraph.voice_ranges != paragraph_patch.voice_ranges
+            ):
                 content_changed = True
             paragraph.text = paragraph_patch.text.strip()
             paragraph.included = paragraph_patch.included
+            paragraph.voice_ranges = paragraph_patch.voice_ranges
         if content_changed:
             chapter.status = "draft"
             chapter.status_message = None
@@ -250,16 +262,31 @@ def update_book(book_id: str, patch: BookPatch) -> Book:
 def preview(book_id: str, request: PreviewRequest) -> PreviewResponse:
     load_or_404(book_id)
     style = merge_style(load_style_or_404(request.style.style_id), request.style)
+    errors = validate_voice_ranges(request.text, request.voice_ranges, {member.id for member in request.cast})
+    if errors:
+        raise HTTPException(status_code=422, detail=" ".join(errors))
     preview_id = uuid.uuid4().hex
     output_dir = previews_root / preview_id
     output_dir.mkdir(parents=True, exist_ok=True)
     wav_path = output_dir / "preview.wav"
     audio_path = output_dir / "preview.m4a"
     vtt_path = output_dir / "preview.vtt"
-    tts_manager.synthesize(request.text, style, wav_path)
+    render_annotated_paragraph(
+        paragraph=Paragraph(
+            id="preview-paragraph",
+            index=0,
+            original_text=request.subtitle_text or request.text,
+            text=request.text,
+            voice_ranges=request.voice_ranges,
+        ),
+        style=style,
+        cast=request.cast,
+        tts=tts_manager,
+        output_path=wav_path,
+    )
     ffmpeg.transcode_to_m4a(wav_path, audio_path)
     duration = ffmpeg.run_ffprobe_duration(audio_path)
-    write_vtt(str(vtt_path), [SubtitleCue(0, duration, request.subtitle_text or request.text)])
+    write_vtt(str(vtt_path), [SubtitleCue(0, duration, strip_paralinguistic_tags(request.subtitle_text or request.text))])
     return PreviewResponse(
         id=preview_id,
         audio_url=file_url(audio_path),

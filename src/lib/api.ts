@@ -1,11 +1,13 @@
 import type {
   Book,
+  CastMember,
   GenerateJob,
   HealthResponse,
   PreviewResponse,
   StyleOverride,
   TTSCapabilities,
   VoiceStyle,
+  VoiceRange,
 } from "../types";
 
 export async function getHealth(): Promise<HealthResponse> {
@@ -44,6 +46,7 @@ export async function saveBook(book: Book): Promise<Book> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       title: book.title,
+      cast: book.cast,
       chapters: book.chapters.map((chapter) => ({
         id: chapter.id,
         title: chapter.title,
@@ -52,6 +55,7 @@ export async function saveBook(book: Book): Promise<Book> {
           id: paragraph.id,
           text: paragraph.text,
           included: paragraph.included,
+          voice_ranges: paragraph.voice_ranges,
         })),
       })),
     }),
@@ -63,11 +67,19 @@ export async function createPreview(
   text: string,
   style: StyleOverride,
   subtitleText: string,
+  cast: CastMember[] = [],
+  voiceRanges: VoiceRange[] = [],
 ): Promise<PreviewResponse> {
   return request<PreviewResponse>(`/api/books/${bookId}/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, style, subtitle_text: subtitleText }),
+    body: JSON.stringify({
+      text,
+      style,
+      subtitle_text: subtitleText,
+      cast,
+      voice_ranges: voiceRanges,
+    }),
   });
 }
 

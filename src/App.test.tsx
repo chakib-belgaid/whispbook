@@ -338,6 +338,85 @@ describe("App review fixes", () => {
     );
   });
 
+  it("imports multiple Chatterbox Turbo character voices into the active cast", async () => {
+    apiMock.createCustomStyle.mockImplementation(async (input) =>
+      sampleStyle({
+        custom: true,
+        id: `${input.name.toLowerCase().replace(/\s+/g, "-")}-style`,
+        name: input.name,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+      }),
+    );
+    const { container } = await renderApp();
+    selectNarrationEngine(container, "chatterbox_turbo");
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Import character voice files"]',
+    );
+    expect(input).not.toBeNull();
+
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [
+        new File(["alice"], "alice-wonder.wav", { type: "audio/wav" }),
+        new File(["bob"], "bob-stone.wav", { type: "audio/wav" }),
+      ],
+    });
+
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(apiMock.createCustomStyle).toHaveBeenCalledTimes(2);
+    expect(apiMock.createCustomStyle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "alice wonder",
+        engine: "chatterbox_turbo",
+        referenceAudio: expect.any(File),
+      }),
+    );
+    expect(container.textContent).toContain("alice wonder");
+    expect(container.textContent).toContain("bob stone");
+  });
+
+  it("inserts Turbo paralinguistic tags in the selected paragraph", async () => {
+    const { container } = await renderApp();
+    selectNarrationEngine(container, "chatterbox_turbo");
+
+    await act(async () => {
+      buttonByText(container, "[laugh]").click();
+    });
+
+    expect(activeParagraphText(container)).toContain("[laugh]");
+  });
+
+  it("assigns selected preview text to a cast voice and highlights only that range", async () => {
+    const { container } = await renderApp();
+    selectNarrationEngine(container, "chatterbox_turbo");
+    const preview = container.querySelector<HTMLElement>(
+      '[data-testid="paragraph-annotation-preview"]',
+    );
+    expect(preview).not.toBeNull();
+
+    selectTextInElement(preview!, "Existing");
+    const castSelect = controlByLabel<HTMLSelectElement>(
+      container,
+      "Character voice",
+    );
+    castSelect.value = "existing-alice";
+    await act(async () => {
+      castSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      buttonByText(container, "Assign voice").click();
+    });
+
+    const highlight = container.querySelector(".voice-highlight");
+    expect(highlight?.textContent).toBe("Existing");
+    expect(container.textContent).toContain("Default narrator remains plain");
+  });
+
   async function renderApp(): Promise<{ container: HTMLDivElement }> {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -417,6 +496,43 @@ function changeInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function selectNarrationEngine(container: ParentNode, engine: string): void {
+  const engineSelect = controlByLabel<HTMLSelectElement>(
+    container,
+    "Narration source",
+  );
+  engineSelect.value = engine;
+  engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function selectTextInElement(element: HTMLElement, text: string): void {
+  const textNode = findTextNode(element, text);
+  if (!textNode || textNode.nodeValue === null) {
+    throw new Error(`Could not find text node: ${text}`);
+  }
+  const start = textNode.nodeValue.indexOf(text);
+  const range = document.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, start + text.length);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+}
+
+function findTextNode(node: Node, text: string): Text | null {
+  if (node.nodeType === Node.TEXT_NODE && node.nodeValue?.includes(text)) {
+    return node as Text;
+  }
+  for (const child of Array.from(node.childNodes)) {
+    const match = findTextNode(child, text);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
 function sampleBook(id: string, title: string, filename: string): Book {
   return {
     id,
@@ -428,6 +544,14 @@ function sampleBook(id: string, title: string, filename: string): Book {
     final_vtt_url: null,
     final_srt_url: null,
     final_package_url: null,
+    cast: [
+      {
+        id: `${id}-alice`,
+        name: "Alice",
+        style_id: "alice-style",
+        color: "#5f9ed1",
+      },
+    ],
     chapters: [
       {
         id: `${id}-chapter-1`,
@@ -447,6 +571,7 @@ function sampleBook(id: string, title: string, filename: string): Book {
             original_text: `${title} paragraph`,
             text: `${title} paragraph`,
             included: true,
+            voice_ranges: [],
           },
           {
             id: `${id}-paragraph-2`,
@@ -454,6 +579,7 @@ function sampleBook(id: string, title: string, filename: string): Book {
             original_text: `${title} second paragraph`,
             text: `${title} second paragraph`,
             included: true,
+            voice_ranges: [],
           },
         ],
       },
@@ -497,6 +623,7 @@ function sampleCapabilities(): TTSCapabilities {
     engine: "kokoro",
     voices: [{ value: "bm_george", label: "George", language: "b" }],
     languages: [{ value: "b", label: "British English" }],
+    paralinguistic_tags: [],
   };
   const chatterbox: EngineCapabilities = {
     engine: "chatterbox",
@@ -505,12 +632,25 @@ function sampleCapabilities(): TTSCapabilities {
       { value: "reference", label: "Custom reference audio", language: "en" },
     ],
     languages: [{ value: "en", label: "English" }],
+    paralinguistic_tags: [],
   };
 
   return {
     kokoro,
     chatterbox,
-    chatterbox_turbo: { ...chatterbox, engine: "chatterbox_turbo" },
+    chatterbox_turbo: {
+      ...chatterbox,
+      engine: "chatterbox_turbo",
+      paralinguistic_tags: [
+        "[laugh]",
+        "[chuckle]",
+        "[cough]",
+        "[sigh]",
+        "[gasp]",
+        "[whisper]",
+        "[breath]",
+      ],
+    },
     mock: { ...chatterbox, engine: "mock" },
   };
 }

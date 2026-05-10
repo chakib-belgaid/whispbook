@@ -105,13 +105,28 @@ CHATTERBOX_VOICES = [
     TTSVoiceOption(value="reference", label="Custom reference audio", language="en"),
 ]
 
+CHATTERBOX_TURBO_PARALINGUISTIC_TAGS = [
+    "[laugh]",
+    "[chuckle]",
+    "[cough]",
+    "[sigh]",
+    "[gasp]",
+    "[whisper]",
+    "[breath]",
+]
+
 
 def tts_capabilities() -> Dict[str, EngineCapabilities]:
     chatterbox = EngineCapabilities(engine="chatterbox", voices=CHATTERBOX_VOICES, languages=CHATTERBOX_LANGUAGES)
     return {
         "kokoro": EngineCapabilities(engine="kokoro", voices=KOKORO_VOICES, languages=KOKORO_LANGUAGES),
         "chatterbox": chatterbox,
-        "chatterbox_turbo": chatterbox.model_copy(update={"engine": "chatterbox_turbo"}),
+        "chatterbox_turbo": chatterbox.model_copy(
+            update={
+                "engine": "chatterbox_turbo",
+                "paralinguistic_tags": CHATTERBOX_TURBO_PARALINGUISTIC_TAGS,
+            }
+        ),
         "mock": EngineCapabilities(
             engine="mock",
             voices=[TTSVoiceOption(value="mock", label="Mock sine voice", language="en")],
