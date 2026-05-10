@@ -104,7 +104,7 @@ Open `http://localhost:5173`.
 
 ## CI/CD
 
-Pull requests to `master` and pushes to `master` run the CI workflow with separate frontend and backend jobs. The frontend job checks formatting, lints, runs Vitest, and builds the Vite app. The backend job runs Ruff and the pytest suite through `uv` so logs point at either Python quality issues or failing tests.
+Pull requests to `master` or `main` and pushes to `master` or `main` run the CI workflow with separate frontend and backend jobs. The frontend job checks formatting, lints, runs Vitest, and builds the Vite app. The backend job runs Ruff and the pytest suite through `uv` so logs point at either Python quality issues or failing tests.
 
 Release validation is intentionally separate from PR checks. It runs only for manual dispatches or version tags (`v*`) and adds a backend Docker image build on top of the normal frontend and backend validation.
 

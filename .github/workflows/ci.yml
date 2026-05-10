@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, main]
   push:
-    branches: [master]
+    branches: [master, main]
 
 permissions:
   contents: read
@@ -60,7 +60,7 @@ jobs:
           enable-cache: true
 
       - name: Lint backend
-        run: uv run --with ruff ruff check backend/app backend/tests
+        run: uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
 
       - name: Run backend tests
         run: uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests

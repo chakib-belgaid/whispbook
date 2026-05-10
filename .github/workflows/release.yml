@@ -53,7 +53,7 @@ jobs:
         run: npm run build
 
       - name: Lint backend
-        run: uv run --with ruff ruff check backend/app backend/tests
+        run: uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
 
       - name: Run backend tests
         run: uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests
