@@ -366,7 +366,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    writeStoredStyleDraft(styleDraft);
+    const timer = window.setTimeout(() => writeStoredStyleDraft(styleDraft), 250);
+    return () => window.clearTimeout(timer);
   }, [styleDraft]);
 
   useEffect(() => {
@@ -755,7 +756,10 @@ function App() {
   }
 
   function updateCustomReferenceStartSeconds(value: string): void {
-    setCustomReferenceStartSeconds(Math.max(0, Number(value) || 0));
+    const startSeconds = Number(value);
+    setCustomReferenceStartSeconds(
+      Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0,
+    );
   }
 
   function updateBookTitle(title: string): void {
@@ -900,10 +904,10 @@ function App() {
     styleDraft.language,
   );
   const activeEngineSettings = settingsForEngine(styleDraft.engine);
-  const customStyles = styles.filter((style) => style.custom);
+  const voicePresetStyles = styles;
 
   const selectedStyleName =
-    customStyles.find((style) => style.id === styleDraft.style_id)?.name ??
+    voicePresetStyles.find((style) => style.id === styleDraft.style_id)?.name ??
     "Manual";
   const isImporting = busy?.startsWith("Importing") ?? false;
 
@@ -1291,16 +1295,24 @@ function App() {
                 <Wand2 size={19} aria-hidden="true" />
                 <h2>Voice presets</h2>
               </div>
-              {customStyles.length > 0 && (
+              {voicePresetStyles.length > 0 && (
                 <SelectField
                   label="Saved voice preset"
                   value={
-                    customStyles.some((style) => style.id === styleDraft.style_id)
+                    voicePresetStyles.some((style) => style.id === styleDraft.style_id)
                       ? styleDraft.style_id
                       : ""
                   }
                   onChange={(styleId) => {
-                    const next = customStyles.find(
+                    if (!styleId) {
+                      setStyleDraft((current) => ({
+                        ...current,
+                        style_id: "",
+                      }));
+                      setPreviewUrl(null);
+                      return;
+                    }
+                    const next = voicePresetStyles.find(
                       (style) => style.id === styleId,
                     );
                     if (next) {
@@ -1312,7 +1324,7 @@ function App() {
                   }}
                 >
                   <option value="">Current settings</option>
-                  {customStyles.map((style) => (
+                  {voicePresetStyles.map((style) => (
                     <option key={style.id} value={style.id}>
                       {style.name}
                     </option>
@@ -1373,11 +1385,6 @@ function App() {
                           step="0.1"
                           value={customReferenceStartSeconds}
                           onChange={(event) =>
-                            updateCustomReferenceStartSeconds(
-                              event.currentTarget.value,
-                            )
-                          }
-                          onInput={(event) =>
                             updateCustomReferenceStartSeconds(
                               event.currentTarget.value,
                             )
@@ -2028,13 +2035,9 @@ function RangeControl({
   const displayValue = Number.isInteger(step)
     ? Math.round(value).toString()
     : value.toFixed(2);
-  const progress = ((value - min) / (max - min)) * 100;
-  const rangeStyle = {
-    "--range-progress": `${progress}%`,
-  } as CSSProperties;
 
   return (
-    <label className="range-field rune-range" style={rangeStyle}>
+    <label className="range-field">
       <span>
         {label}
         <strong className="range-value">

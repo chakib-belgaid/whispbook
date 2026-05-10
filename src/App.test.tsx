@@ -174,6 +174,46 @@ describe("App review fixes", () => {
     expect(container.textContent).not.toContain("voice charm");
   });
 
+  it("keeps built-in voice presets selectable and allows returning to current settings", async () => {
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ id: "fantasy", name: "Fantasy", custom: false }),
+      sampleStyle({
+        id: "sci-fi",
+        name: "Sci-fi",
+        custom: false,
+        voice: "am_adam",
+        language: "a",
+        speed: 1.08,
+      }),
+    ]);
+    const { container } = await renderApp();
+
+    const presetSelect = controlByLabel<HTMLSelectElement>(
+      container,
+      "Saved voice preset",
+    );
+
+    expect(Array.from(presetSelect.options).map((option) => option.value)).toEqual([
+      "",
+      "fantasy",
+      "sci-fi",
+    ]);
+
+    presetSelect.value = "fantasy";
+    await act(async () => {
+      presetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(presetSelect.value).toBe("fantasy");
+
+    presetSelect.value = "";
+    await act(async () => {
+      presetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(presetSelect.value).toBe("");
+  });
+
   it("keeps fine-tuning drawers collapsed by default", async () => {
     const { container } = await renderApp();
 
@@ -222,9 +262,8 @@ describe("App review fixes", () => {
       container,
       "Sample start (seconds)",
     );
-    startInput.value = "15";
     await act(async () => {
-      startInput.dispatchEvent(new Event("input", { bubbles: true }));
+      changeInputValue(startInput, "15");
     });
 
     await act(async () => {
@@ -234,6 +273,43 @@ describe("App review fixes", () => {
     expect(apiMock.createCustomStyle).toHaveBeenCalledWith(
       expect.objectContaining({
         referenceStartSeconds: 15,
+      }),
+    );
+  });
+
+  it("clamps non-finite reference audio start points before saving", async () => {
+    const { container } = await renderApp();
+    const input = container.querySelector<HTMLInputElement>('input[accept*="audio"]');
+    expect(input).not.toBeNull();
+
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["voice"], "voice.wav", { type: "audio/wav" })],
+    });
+
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const voiceDetails = detailsBySummary(container, "Custom voice details");
+    voiceDetails.open = true;
+    voiceDetails.dispatchEvent(new Event("toggle", { bubbles: true }));
+
+    const startInput = controlByLabel<HTMLInputElement>(
+      container,
+      "Sample start (seconds)",
+    );
+    await act(async () => {
+      changeInputValue(startInput, "1e999");
+    });
+
+    await act(async () => {
+      buttonByText(container, "Save voice style").click();
+    });
+
+    expect(apiMock.createCustomStyle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceStartSeconds: 0,
       }),
     );
   });
@@ -295,6 +371,20 @@ function detailsBySummary(container: ParentNode, text: string): HTMLDetailsEleme
     throw new Error(`Could not find details summary: ${text}`);
   }
   return details as HTMLDetailsElement;
+}
+
+function changeInputValue(input: HTMLInputElement, value: string): void {
+  const valueSetter = Object.getOwnPropertyDescriptor(input, "value")?.set;
+  const prototypeSetter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(input),
+    "value",
+  )?.set;
+  const setValue = prototypeSetter ?? valueSetter;
+  if (!setValue) {
+    throw new Error("Could not set input value");
+  }
+  setValue.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function sampleBook(id: string, title: string, filename: string): Book {
