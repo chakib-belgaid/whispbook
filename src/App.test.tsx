@@ -231,6 +231,14 @@ describe("App review fixes", () => {
     apiMock.getStyles.mockResolvedValue([
       sampleStyle({ id: "fantasy", name: "Fantasy", custom: false }),
       sampleStyle({
+        id: "chatterbox-turbo-default",
+        name: "Chatterbox Turbo default",
+        custom: false,
+        engine: "chatterbox_turbo",
+        voice: "default",
+        language: "en",
+      }),
+      sampleStyle({
         id: "tom-sawyer",
         name: "Tom Sawyer",
         custom: true,
@@ -264,6 +272,93 @@ describe("App review fixes", () => {
     });
 
     expect(savedVoiceSelect.value).toBe("");
+  });
+
+  it("uses an available base style after switching saved voices back to current settings", async () => {
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ id: "neutral", name: "Neutral", custom: false }),
+      sampleStyle({
+        id: "chatterbox-turbo-default",
+        name: "Chatterbox Turbo default",
+        custom: false,
+        engine: "chatterbox_turbo",
+        voice: "default",
+        language: "en",
+      }),
+      sampleStyle({
+        id: "custom-turbo",
+        name: "Custom Turbo",
+        custom: true,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+      }),
+    ]);
+    const { container } = await renderApp();
+    const savedVoiceSelect = controlByLabel<HTMLSelectElement>(
+      container,
+      "Saved voice",
+    );
+
+    savedVoiceSelect.value = "custom-turbo";
+    await act(async () => {
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    savedVoiceSelect.value = "";
+    await act(async () => {
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      buttonByText(container, "Listen to sample").click();
+    });
+
+    expect(apiMock.createPreview).toHaveBeenCalledWith(
+      "existing",
+      "Existing paragraph",
+      expect.objectContaining({ style_id: "chatterbox-turbo-default" }),
+      "Existing paragraph",
+      expect.any(Array),
+      expect.any(Array),
+    );
+  });
+
+  it("replaces a stale stored style id before creating a preview", async () => {
+    window.localStorage.setItem(
+      "whispbook.styleDraft",
+      JSON.stringify({
+        style_id: "missing-custom-style",
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+        temperature: 0.72,
+        top_p: 0.93,
+      }),
+    );
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ id: "neutral", name: "Neutral", custom: false }),
+      sampleStyle({
+        id: "chatterbox-turbo-default",
+        name: "Chatterbox Turbo default",
+        custom: false,
+        engine: "chatterbox_turbo",
+        voice: "default",
+        language: "en",
+      }),
+    ]);
+    const { container } = await renderApp();
+
+    await act(async () => {
+      buttonByText(container, "Listen to sample").click();
+    });
+
+    expect(apiMock.createPreview).toHaveBeenCalledWith(
+      "existing",
+      "Existing paragraph",
+      expect.objectContaining({ style_id: "chatterbox-turbo-default" }),
+      "Existing paragraph",
+      expect.any(Array),
+      expect.any(Array),
+    );
   });
 
   it("keeps fine-tuning drawers collapsed by default", async () => {
@@ -515,7 +610,15 @@ describe("App review fixes", () => {
     expect(
       container.querySelector('[aria-label="Available character voices"]'),
     ).toBeNull();
-    expect(container.textContent).toContain("Alice: Existing");
+    expect(
+      container.querySelector('[aria-label="Assigned voice ranges"]'),
+    ).toBeNull();
+    const highlight = container.querySelector<HTMLElement>(
+      '[data-testid="voice-range-highlight"]',
+    );
+    expect(highlight?.dataset.castName).toBe("Alice");
+    expect(highlight?.textContent).toBe("Existing");
+    expect(container.textContent).not.toContain("Alice: Existing");
     expect(container.textContent).toContain("Default narrator remains plain");
   });
 
@@ -556,7 +659,12 @@ describe("App review fixes", () => {
         ?.click();
     });
 
-    expect(container.textContent).toContain("Tom Sawyer: Storage");
+    const highlight = container.querySelector<HTMLElement>(
+      '[data-testid="voice-range-highlight"]',
+    );
+    expect(highlight?.dataset.castName).toBe("Tom Sawyer");
+    expect(highlight?.textContent).toBe("Storage");
+    expect(container.textContent).not.toContain("Tom Sawyer: Storage");
   });
 
   async function renderApp(): Promise<{ container: HTMLDivElement }> {

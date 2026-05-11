@@ -120,6 +120,13 @@ const defaultStyleDraft: StyleOverride = {
 
 const storedStyleDraftKey = "whispbook.styleDraft";
 
+const defaultStyleIdByEngine: Partial<Record<EngineName, string>> = {
+  kokoro: "neutral",
+  chatterbox: "chatterbox-default",
+  chatterbox_turbo: "chatterbox-turbo-default",
+  mock: "neutral",
+};
+
 const castColorPalette = [
   "#5f9ed1",
   "#d17a5f",
@@ -209,6 +216,13 @@ interface TextSelectionRange {
   paragraphId: string;
   start: number;
   end: number;
+}
+
+interface VoiceHighlightSegment {
+  key: string;
+  text: string;
+  castName: string | null;
+  color: string | null;
 }
 
 const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
@@ -386,6 +400,9 @@ function App() {
   const [activePane, setActivePane] = useState<WorkbenchPane>("manuscript");
   const [selectedAnnotationRange, setSelectedAnnotationRange] =
     useState<TextSelectionRange | null>(null);
+  const [paragraphScrollTops, setParagraphScrollTops] = useState<
+    Record<string, number>
+  >({});
   const [selectedCastId, setSelectedCastId] = useState("");
   const [customTag, setCustomTag] = useState("");
 
@@ -499,7 +516,10 @@ function App() {
       activateBook(firstBook);
       const storedDraft = readStoredStyleDraft();
       setStyleDraft((current) =>
-        normalizeStyleDraft(storedDraft ?? current, nextCapabilities),
+        ensureAvailableStyleDraft(
+          normalizeStyleDraft(storedDraft ?? current, nextCapabilities),
+          nextStyles,
+        ),
       );
       setError(null);
     } catch (caught) {
@@ -637,11 +657,15 @@ function App() {
     }
     setBusy("Previewing");
     setError(null);
+    const requestStyle = ensureAvailableStyleDraft(styleDraft, styles);
+    if (requestStyle !== styleDraft) {
+      setStyleDraft(requestStyle);
+    }
     try {
       const preview = await createPreview(
         book.id,
         selectedParagraph.text,
-        styleDraft,
+        requestStyle,
         selectedParagraph.text,
         book.cast,
         selectedParagraph.voice_ranges,
@@ -671,8 +695,12 @@ function App() {
     }
     setBusy("Starting");
     setError(null);
+    const requestStyle = ensureAvailableStyleDraft(styleDraft, styles);
+    if (requestStyle !== styleDraft) {
+      setStyleDraft(requestStyle);
+    }
     try {
-      const nextJob = await startGeneration(saved.id, chapterIds, styleDraft);
+      const nextJob = await startGeneration(saved.id, chapterIds, requestStyle);
       setJob(nextJob);
     } catch (caught) {
       setError(messageFromError(caught));
@@ -686,7 +714,11 @@ function App() {
       return;
     }
     try {
-      const script = buildGenerationScript(book, styleDraft, {
+      const scriptStyle = ensureAvailableStyleDraft(styleDraft, styles);
+      if (scriptStyle !== styleDraft) {
+        setStyleDraft(scriptStyle);
+      }
+      const script = buildGenerationScript(book, scriptStyle, {
         defaultApiUrl: defaultBackendUrlFromLocation(window.location),
       });
       downloadTextFile(
@@ -894,6 +926,18 @@ function App() {
     setSelectedAnnotationRange(range ? { paragraphId, ...range } : null);
   }
 
+  function updateParagraphEditorScroll(
+    paragraphId: string,
+    textarea: HTMLTextAreaElement,
+  ): void {
+    const scrollTop = textarea.scrollTop;
+    setParagraphScrollTops((current) =>
+      current[paragraphId] === scrollTop
+        ? current
+        : { ...current, [paragraphId]: scrollTop },
+    );
+  }
+
   function assignSelectedRangeToCast(
     chapterId: string,
     paragraphId: string,
@@ -974,19 +1018,6 @@ function App() {
       ),
     }));
     setSelectedAnnotationRange(null);
-  }
-
-  function removeVoiceRange(
-    chapterId: string,
-    paragraphId: string,
-    rangeId: string,
-  ): void {
-    updateParagraph(chapterId, paragraphId, (current) => ({
-      ...current,
-      voice_ranges: current.voice_ranges.filter(
-        (range) => range.id !== rangeId,
-      ),
-    }));
   }
 
   function insertTagIntoParagraph(
@@ -1482,73 +1513,88 @@ function App() {
                               </span>
                             </label>
                             <div className="paragraph-copy">
-                              <textarea
-                                className="markdown-paragraph-editor"
-                                value={paragraph.text}
-                                disabled={!paragraph.included}
-                                spellCheck={false}
-                                rows={Math.max(
-                                  1,
-                                  Math.min(
-                                    8,
-                                    Math.ceil(paragraph.text.length / 88),
-                                  ),
-                                )}
-                                onFocus={(event) => {
-                                  setSelectedParagraphId(paragraph.id);
-                                  updateAnnotationSelectionFromTextarea(
-                                    paragraph.id,
-                                    event.currentTarget,
-                                  );
-                                }}
-                                onClick={(event) =>
-                                  updateAnnotationSelectionFromTextarea(
-                                    paragraph.id,
-                                    event.currentTarget,
-                                  )
-                                }
-                                onSelect={(event) =>
-                                  updateAnnotationSelectionFromTextarea(
-                                    paragraph.id,
-                                    event.currentTarget,
-                                  )
-                                }
-                                onKeyUp={(event) =>
-                                  updateAnnotationSelectionFromTextarea(
-                                    paragraph.id,
-                                    event.currentTarget,
-                                  )
-                                }
-                                onChange={(event) => {
-                                  const text = event.currentTarget.value;
-                                  const selection =
-                                    selectionRangeWithinTextarea(
+                              <div className="paragraph-editor-shell">
+                                <ParagraphVoiceHighlights
+                                  paragraph={paragraph}
+                                  cast={book.cast}
+                                  scrollTop={
+                                    paragraphScrollTops[paragraph.id] ?? 0
+                                  }
+                                />
+                                <textarea
+                                  className="markdown-paragraph-editor"
+                                  value={paragraph.text}
+                                  disabled={!paragraph.included}
+                                  spellCheck={false}
+                                  rows={Math.max(
+                                    1,
+                                    Math.min(
+                                      8,
+                                      Math.ceil(paragraph.text.length / 88),
+                                    ),
+                                  )}
+                                  onFocus={(event) => {
+                                    setSelectedParagraphId(paragraph.id);
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
                                       event.currentTarget,
                                     );
-                                  updateParagraph(
-                                    activeChapter.id,
-                                    paragraph.id,
-                                    (current) => ({
-                                      ...current,
-                                      text,
-                                      voice_ranges:
-                                        reconcileVoiceRangesAfterTextEdit(
-                                          current.text,
-                                          text,
-                                          current.voice_ranges,
-                                        ),
-                                    }),
-                                  );
-                                  setSelectedAnnotationRange(
-                                    selection
-                                      ? {
-                                          paragraphId: paragraph.id,
-                                          ...selection,
-                                        }
-                                      : null,
-                                  );
-                                }}
-                              />
+                                  }}
+                                  onClick={(event) =>
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onSelect={(event) =>
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onKeyUp={(event) =>
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onScroll={(event) =>
+                                    updateParagraphEditorScroll(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onChange={(event) => {
+                                    const text = event.currentTarget.value;
+                                    const selection =
+                                      selectionRangeWithinTextarea(
+                                        event.currentTarget,
+                                      );
+                                    updateParagraph(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      (current) => ({
+                                        ...current,
+                                        text,
+                                        voice_ranges:
+                                          reconcileVoiceRangesAfterTextEdit(
+                                            current.text,
+                                            text,
+                                            current.voice_ranges,
+                                          ),
+                                      }),
+                                    );
+                                    setSelectedAnnotationRange(
+                                      selection
+                                        ? {
+                                            paragraphId: paragraph.id,
+                                            ...selection,
+                                          }
+                                        : null,
+                                    );
+                                  }}
+                                />
+                              </div>
                               {paragraph.id === selectedParagraph?.id && (
                                 <ParagraphInspector
                                   paragraph={paragraph}
@@ -1576,13 +1622,6 @@ function App() {
                                       activeChapter.id,
                                       paragraph.id,
                                       style,
-                                    )
-                                  }
-                                  onRemoveRange={(rangeId) =>
-                                    removeVoiceRange(
-                                      activeChapter.id,
-                                      paragraph.id,
-                                      rangeId,
                                     )
                                   }
                                   onInsertTag={(tag) =>
@@ -1685,10 +1724,12 @@ function App() {
                       }
                       onChange={(styleId) => {
                         if (!styleId) {
-                          setStyleDraft((current) => ({
-                            ...current,
-                            style_id: "",
-                          }));
+                          setStyleDraft((current) =>
+                            ensureAvailableStyleDraft(
+                              { ...current, style_id: "" },
+                              styles,
+                            ),
+                          );
                           setPreviewUrl(null);
                           return;
                         }
@@ -2039,6 +2080,103 @@ function App() {
   );
 }
 
+function ParagraphVoiceHighlights({
+  paragraph,
+  cast,
+  scrollTop,
+}: {
+  paragraph: Paragraph;
+  cast: CastMember[];
+  scrollTop: number;
+}) {
+  const segments = voiceHighlightSegments(paragraph, cast);
+  if (!segments.some((segment) => segment.castName)) {
+    return null;
+  }
+
+  return (
+    <div className="paragraph-highlight-layer" aria-hidden="true">
+      <div
+        className="paragraph-highlight-content"
+        style={{ transform: `translateY(-${scrollTop}px)` }}
+      >
+        {segments.map((segment) =>
+          segment.castName ? (
+            <span
+              key={segment.key}
+              className="voice-highlight-segment"
+              data-testid="voice-range-highlight"
+              data-cast-name={segment.castName}
+              style={
+                {
+                  "--voice-color": segment.color ?? "#8a8a8a",
+                } as CSSProperties
+              }
+              title={segment.castName}
+            >
+              {segment.text}
+            </span>
+          ) : (
+            <span key={segment.key}>{segment.text}</span>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function voiceHighlightSegments(
+  paragraph: Paragraph,
+  cast: CastMember[],
+): VoiceHighlightSegment[] {
+  const castById = new Map(cast.map((member) => [member.id, member]));
+  const ranges = paragraph.voice_ranges
+    .map((range) => {
+      const start = Math.max(0, Math.min(range.start, paragraph.text.length));
+      const end = Math.max(0, Math.min(range.end, paragraph.text.length));
+      return {
+        id: range.id,
+        start: Math.min(start, end),
+        end: Math.max(start, end),
+        member: castById.get(range.cast_id),
+      };
+    })
+    .filter((range) => range.end > range.start)
+    .sort((first, second) => first.start - second.start);
+
+  const segments: VoiceHighlightSegment[] = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.start > cursor) {
+      segments.push({
+        key: `plain-${cursor}-${range.start}`,
+        text: paragraph.text.slice(cursor, range.start),
+        castName: null,
+        color: null,
+      });
+    }
+    const highlightStart = Math.max(cursor, range.start);
+    if (range.end > highlightStart) {
+      segments.push({
+        key: `voice-${range.id}-${highlightStart}-${range.end}`,
+        text: paragraph.text.slice(highlightStart, range.end),
+        castName: range.member?.name ?? "Unknown voice",
+        color: range.member?.color ?? "#8a8a8a",
+      });
+      cursor = range.end;
+    }
+  }
+  if (cursor < paragraph.text.length) {
+    segments.push({
+      key: `plain-${cursor}-${paragraph.text.length}`,
+      text: paragraph.text.slice(cursor),
+      castName: null,
+      color: null,
+    });
+  }
+  return segments;
+}
+
 function ParagraphInspector({
   paragraph,
   cast,
@@ -2050,7 +2188,6 @@ function ParagraphInspector({
   customTag,
   onAssignToCast,
   onAssignToStyle,
-  onRemoveRange,
   onInsertTag,
   onCustomTagChange,
 }: {
@@ -2064,7 +2201,6 @@ function ParagraphInspector({
   customTag: string;
   onAssignToCast: (castId: string) => void;
   onAssignToStyle: (style: VoiceStyle) => void;
-  onRemoveRange: (rangeId: string) => void;
   onInsertTag: (tag: string) => void;
   onCustomTagChange: (value: string) => void;
 }) {
@@ -2090,7 +2226,6 @@ function ParagraphInspector({
   const customTagMatchesKnown = tags.some(
     (tag) => tag.toLowerCase() === normalizedCustomTag.toLowerCase(),
   );
-  const castById = new Map(cast.map((member) => [member.id, member]));
   const castStyleIds = new Set(cast.map((member) => member.style_id));
   const savedVoiceChoices = savedVoiceStyles.filter(
     (style) => !castStyleIds.has(style.id),
@@ -2229,33 +2364,6 @@ function ParagraphInspector({
                   </div>
                 </div>
               )}
-            </div>
-          )}
-          {paragraph.voice_ranges.length > 0 && (
-            <div className="range-list" aria-label="Assigned voice ranges">
-              {paragraph.voice_ranges.map((range) => {
-                const member = castById.get(range.cast_id);
-                return (
-                  <div className="range-row" key={range.id}>
-                    <span
-                      className="cast-swatch"
-                      style={{ backgroundColor: member?.color ?? "#8a8a8a" }}
-                      aria-hidden="true"
-                    />
-                    <span>
-                      {member?.name ?? "Unknown"}:{" "}
-                      {paragraph.text.slice(range.start, range.end)}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Remove range for ${member?.name ?? "Unknown"}`}
-                      onClick={() => onRemoveRange(range.id)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                );
-              })}
             </div>
           )}
         </>
@@ -2954,6 +3062,35 @@ function normalizeStyleDraft(
     voice,
     prompt_prefix: "",
   };
+}
+
+function ensureAvailableStyleDraft(
+  draft: StyleOverride,
+  styles: VoiceStyle[],
+): StyleOverride {
+  if (styles.some((style) => style.id === draft.style_id)) {
+    return draft;
+  }
+  return {
+    ...draft,
+    style_id: fallbackStyleIdForDraft(draft, styles),
+  };
+}
+
+function fallbackStyleIdForDraft(
+  draft: StyleOverride,
+  styles: VoiceStyle[],
+): string {
+  const preferredStyleId =
+    defaultStyleIdByEngine[draft.engine ?? defaultTtsModel] ??
+    defaultStyleDraft.style_id;
+  if (styles.some((style) => style.id === preferredStyleId)) {
+    return preferredStyleId;
+  }
+  if (styles.some((style) => style.id === defaultStyleDraft.style_id)) {
+    return defaultStyleDraft.style_id;
+  }
+  return styles[0]?.id ?? defaultStyleDraft.style_id;
 }
 
 function settingsForEngine(

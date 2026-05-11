@@ -1167,7 +1167,39 @@ summary:focus-visible,
   gap: 6px;
 }
 
+.paragraph-editor-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.paragraph-highlight-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0 9px 0 0;
+  color: transparent;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.93rem;
+  line-height: 1.62;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.paragraph-highlight-content {
+  min-height: 100%;
+}
+
+.voice-highlight-segment {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--voice-color) 34%, transparent);
+  box-decoration-break: clone;
+  box-shadow: inset 0 -2px 0 var(--voice-color);
+}
+
 .paragraph-block textarea {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   min-height: 1.58em;
@@ -1235,8 +1267,7 @@ summary:focus-visible,
 .tag-autocomplete,
 .tag-suggestion-list,
 .cast-import-panel,
-.cast-list,
-.range-list {
+.cast-list {
   display: grid;
   gap: 9px;
 }
@@ -1354,8 +1385,7 @@ summary:focus-visible,
   font-size: 0.82rem;
 }
 
-.cast-row,
-.range-row {
+.cast-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -1369,14 +1399,6 @@ summary:focus-visible,
   border: 1px solid rgba(63, 39, 19, 0.26);
   border-radius: 999px;
   box-shadow: 0 1px 3px rgba(55, 31, 12, 0.24);
-}
-
-.range-row {
-  border-radius: 7px;
-  padding: 6px 7px;
-  color: #4e3017;
-  background: rgba(255, 237, 194, 0.5);
-  font-size: 0.82rem;
 }
 
 .selected-paragraph-toolbar {
