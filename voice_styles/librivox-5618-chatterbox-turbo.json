@@ -1,0 +1,19 @@
+{
+  "id": "librivox-5618-chatterbox-turbo",
+  "name": "Male - Mark Nelson (Chatterbox Turbo)",
+  "engine": "chatterbox_turbo",
+  "description": "Imported from LibriVox project 5618. Source: https://librivox.org/the-time-machine-v3-by-h-g-wells/. Public domain audiobook from LibriVox.",
+  "voice": "af_heart",
+  "language": "en",
+  "speed": 1.0,
+  "exaggeration": 0.5,
+  "cfg_weight": 0.5,
+  "temperature": 0.8,
+  "top_p": 1.0,
+  "paragraph_gap_ms": 450,
+  "comma_pause_ms": 160,
+  "prompt_prefix": "",
+  "reference_audio_path": "librivox-5618-chatterbox-turbo/reference.wav",
+  "reference_audio_url": null,
+  "custom": true
+}

@@ -1,0 +1,19 @@
+{
+  "id": "librivox-3490-chatterbox",
+  "name": "Male - John Greenman (Chatterbox)",
+  "engine": "chatterbox",
+  "description": "Imported from LibriVox project 3490. Source: https://librivox.org/following-the-equator-by-mark-twain/. Public domain audiobook from LibriVox.",
+  "voice": "af_heart",
+  "language": "en",
+  "speed": 1.0,
+  "exaggeration": 0.5,
+  "cfg_weight": 0.5,
+  "temperature": 0.8,
+  "top_p": 1.0,
+  "paragraph_gap_ms": 450,
+  "comma_pause_ms": 160,
+  "prompt_prefix": "",
+  "reference_audio_path": "librivox-3490-chatterbox/reference.wav",
+  "reference_audio_url": null,
+  "custom": true
+}
