@@ -33,7 +33,7 @@ The backend is a FastAPI application in `backend/app/`. It stores imported books
 - Node.js 20 or newer.
 - npm 10.8.2 or compatible; the project declares `packageManager: npm@10.8.2`.
 - Python 3.10 through 3.13. Python 3.11+ is recommended.
-- `uv` for backend dependency management.
+- `uv` for backend dependency management. The backend uses `backend/pyproject.toml` and `backend/uv.lock`; it does not use `requirements.txt` or direct `pip install` workflows.
 - `ffmpeg` and `ffprobe`.
 - `espeak-ng` for Kokoro voices.
 - Enough disk space for Hugging Face model downloads.
@@ -90,7 +90,7 @@ Whispbook loads Kokoro, Chatterbox, and Chatterbox Turbo weights from Hugging Fa
 
 ```bash
 cd backend
-uv sync
+uv sync --frozen
 
 uv run python - <<'PY'
 from huggingface_hub import snapshot_download
@@ -219,6 +219,8 @@ npm run build
 uv run --project backend --frozen ruff check backend/app backend/tests
 uv run --project backend --frozen pytest backend/tests
 ```
+
+When changing backend dependencies, edit `backend/pyproject.toml` with `uv add`, `uv add --group dev`, or a manual dependency change followed by `uv lock` from `backend/`. Commit both `backend/pyproject.toml` and `backend/uv.lock`.
 
 ## License
 
