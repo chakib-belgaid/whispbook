@@ -127,6 +127,17 @@ export interface ChapterJobState {
   srt_url: string | null;
 }
 
+export interface StreamSegment {
+  sequence: number;
+  chapter_id: string;
+  paragraph_id: string;
+  chapter_title: string;
+  paragraph_index: number;
+  audio_url: string;
+  duration_seconds: number;
+  text_preview: string;
+}
+
 export interface GenerateJob {
   id: string;
   book_id: string;
@@ -136,6 +147,7 @@ export interface GenerateJob {
   message: string;
   progress: number;
   chapters: ChapterJobState[];
+  stream_segments: StreamSegment[];
   final_audio_url: string | null;
   final_vtt_url: string | null;
   final_srt_url: string | null;

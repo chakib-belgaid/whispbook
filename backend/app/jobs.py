@@ -10,7 +10,18 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
 from . import ffmpeg
-from .models import Book, CastMember, Chapter, ChapterJobState, GenerateJob, GenerateRequest, Paragraph, VoiceRange, VoiceStyle
+from .models import (
+    Book,
+    CastMember,
+    Chapter,
+    ChapterJobState,
+    GenerateJob,
+    GenerateRequest,
+    Paragraph,
+    StreamSegment,
+    VoiceRange,
+    VoiceStyle,
+)
 from .storage import book_dir, file_url, load_book, load_style, save_book, save_job
 from .subtitles import SubtitleCue as Cue
 from .subtitles import offset_cues, write_srt, write_vtt
@@ -82,7 +93,23 @@ class JobRunner:
         full_cues: List[Cue] = []
         chapter_metadata: List[tuple[str, float, float]] = []
         timeline_offset = 0.0
-        total = max(1, len(selected_ids))
+        total_paragraphs = count_generation_paragraphs(book, selected_ids)
+        completed_paragraphs = 0
+        stream_sequence = 0
+
+        def next_stream_sequence() -> int:
+            nonlocal stream_sequence
+            sequence = stream_sequence
+            stream_sequence += 1
+            return sequence
+
+        def publish_stream_segment(segment: StreamSegment) -> None:
+            nonlocal completed_paragraphs
+            completed_paragraphs += 1
+            job.stream_segments.append(segment)
+            job.progress = generation_progress(completed_paragraphs, total_paragraphs)
+            job.message = f"Rendering speech ({completed_paragraphs}/{max(1, total_paragraphs)} paragraphs)"
+            self._remember(job)
 
         for index, chapter in enumerate(book.chapters):
             if chapter.id not in selected_ids:
@@ -98,6 +125,8 @@ class JobRunner:
                 tts=self.tts,
                 output_dir=output_dir / chapter.id,
                 subtitle_source=request.subtitle_source,
+                on_stream_segment=publish_stream_segment,
+                next_stream_sequence=next_stream_sequence,
             )
             chapter_audio_files.append(chapter_result["audio_path"])
             chapter_duration = chapter_result["duration"]
@@ -115,9 +144,13 @@ class JobRunner:
                 vtt_url=chapter_result["vtt_url"],
                 srt_url=chapter_result["srt_url"],
             )
-            job.progress = round(((len(chapter_audio_files)) / total) * 84, 1)
+            job.progress = max(job.progress, generation_progress(completed_paragraphs, total_paragraphs))
             save_book(book)
             self._remember(job)
+
+        job.message = "Packaging audiobook"
+        job.progress = max(job.progress, 92)
+        self._remember(job)
 
         full_vtt = output_dir / "audiobook.vtt"
         full_srt = output_dir / "audiobook.srt"
@@ -185,6 +218,8 @@ def render_chapter(
     tts: TTSManager,
     output_dir: Path,
     subtitle_source: str,
+    on_stream_segment: Optional[Callable[[StreamSegment], None]] = None,
+    next_stream_sequence: Optional[Callable[[], int]] = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     raw_dir = output_dir / "segments"
@@ -213,6 +248,20 @@ def render_chapter(
         subtitle_text = paragraph.original_text if subtitle_source == "original" else paragraph.text
         subtitle_text = strip_paralinguistic_tags(subtitle_text)
         cues.append(Cue(start=timeline, end=timeline + duration, text=subtitle_text))
+        if on_stream_segment:
+            sequence = next_stream_sequence() if next_stream_sequence else paragraph_count - 1
+            on_stream_segment(
+                StreamSegment(
+                    sequence=sequence,
+                    chapter_id=chapter.id,
+                    paragraph_id=paragraph.id,
+                    chapter_title=chapter.title,
+                    paragraph_index=paragraph.index,
+                    audio_url=file_url(wav_path),
+                    duration_seconds=duration,
+                    text_preview=stream_text_preview(subtitle_text),
+                )
+            )
         timeline += duration
         if gap_seconds > 0:
             sequence_files.append(silence_path)
@@ -344,6 +393,29 @@ def update_book_chapter_status(book: Book, chapter_id: str, status: str, message
             chapter.status = status  # type: ignore[assignment]
             chapter.status_message = message
             return
+
+
+def count_generation_paragraphs(book: Book, selected_ids: set[str]) -> int:
+    return sum(
+        1
+        for chapter in book.chapters
+        if chapter.id in selected_ids
+        for _ in iter_included_paragraphs(chapter)
+    )
+
+
+def generation_progress(completed_paragraphs: int, total_paragraphs: int) -> float:
+    if total_paragraphs <= 0:
+        return 0
+    completed = max(0, min(completed_paragraphs, total_paragraphs))
+    return round((completed / total_paragraphs) * 84, 1)
+
+
+def stream_text_preview(text: str, limit: int = 120) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(0, limit - 3)].rstrip() + "..."
 
 
 def selected_chapter_ids(book: Book, requested_ids: List[str]) -> set[str]:

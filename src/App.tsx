@@ -69,6 +69,7 @@ import type {
   HealthResponse,
   Paragraph,
   StyleOverride,
+  StreamSegment,
   TTSCapabilities,
   VoiceStyle,
   VoiceRange,
@@ -195,6 +196,12 @@ interface ChapterEditSnapshot {
 interface ChapterEditHistory {
   past: ChapterEditSnapshot[];
   future: ChapterEditSnapshot[];
+}
+
+interface BookLoadProgress {
+  current: number;
+  total: number;
+  fileName: string;
 }
 
 interface RangeSettingConfig {
@@ -382,6 +389,8 @@ function App() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [job, setJob] = useState<GenerateJob | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [bookLoadProgress, setBookLoadProgress] =
+    useState<BookLoadProgress | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingBookChange, setPendingBookChange] =
@@ -549,12 +558,20 @@ function App() {
 
   async function importSelectedBooks(files: File[]): Promise<void> {
     setError(null);
+    setBookLoadProgress(null);
     try {
       const importPlan = planLibraryImports(files, books);
       const result = await importBooksSequential(
         importPlan.filesToImport,
         importBook,
-        (current, total) => setBusy(`Importing ${current} of ${total}`),
+        (current, total, file) => {
+          setBusy(`Importing ${current} of ${total}`);
+          setBookLoadProgress({
+            current,
+            total,
+            fileName: file.name,
+          });
+        },
       );
       const availableBooks = orderBooksBySelectedFiles(files, [
         ...importPlan.reused,
@@ -573,6 +590,7 @@ function App() {
       setError(messageFromError(caught));
     } finally {
       setBusy(null);
+      setBookLoadProgress(null);
     }
   }
 
@@ -1202,6 +1220,10 @@ function App() {
     (style) => style.engine === "chatterbox_turbo",
   );
   const isImporting = busy?.startsWith("Importing") ?? false;
+  const isPreviewing = busy === "Previewing";
+  const bookLoadPercent = bookLoadProgress
+    ? Math.round((bookLoadProgress.current / bookLoadProgress.total) * 100)
+    : null;
 
   return (
     <main className="app-shell">
@@ -1343,6 +1365,16 @@ function App() {
                     <span>{dirty ? "Save Edits" : "Saved"}</span>
                   </button>
                 </div>
+
+                {bookLoadProgress && bookLoadPercent !== null && (
+                  <div className="book-load-progress" aria-live="polite">
+                    <ProgressMeter
+                      progress={bookLoadPercent}
+                      label="Book loading progress"
+                    />
+                    <p>Loading {bookLoadProgress.fileName}</p>
+                  </div>
+                )}
 
                 <label className="field book-title-field">
                   <span>Book</span>
@@ -2023,6 +2055,16 @@ function App() {
                       <ThemedAudioPlayer src={mediaUrl(previewUrl)} />
                     </div>
                   )}
+                  {isPreviewing && (
+                    <div className="paragraph-preview-progress">
+                      <ProgressMeter
+                        label="Paragraph audio generation progress"
+                        indeterminate
+                        valueText="Creating paragraph audio"
+                      />
+                      <p>Creating paragraph audio</p>
+                    </div>
+                  )}
                 </section>
 
                 {job && (
@@ -2034,11 +2076,7 @@ function App() {
                       <h2>Audiobook progress</h2>
                       <span>{Math.round(job.progress)}%</span>
                     </div>
-                    <div className="progress-bar" aria-hidden="true">
-                      <span
-                        style={{ width: `${Math.max(1, job.progress)}%` }}
-                      />
-                    </div>
+                    <ProgressMeter progress={job.progress} />
                     <p
                       className={
                         job.status === "error"
@@ -2056,6 +2094,11 @@ function App() {
                         </div>
                       ))}
                     </div>
+                    <StreamingAudioQueue
+                      key={job.id}
+                      segments={job.stream_segments ?? []}
+                      status={job.status}
+                    />
                   </section>
                 )}
 
@@ -2445,7 +2488,155 @@ function UnsavedBookDialog({
   );
 }
 
-function ThemedAudioPlayer({ src }: { src: string }) {
+function ProgressMeter({
+  progress = 0,
+  label = "Audiobook creation progress",
+  indeterminate = false,
+  valueText,
+}: {
+  progress?: number;
+  label?: string;
+  indeterminate?: boolean;
+  valueText?: string;
+}) {
+  const clamped = indeterminate ? 48 : Math.max(0, Math.min(100, progress));
+  const rounded = Math.round(clamped);
+  const meterStyle = {
+    "--progress": `${clamped}%`,
+  } as CSSProperties;
+
+  return (
+    <div
+      className={
+        indeterminate ? "progress-meter is-indeterminate" : "progress-meter"
+      }
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={indeterminate ? undefined : rounded}
+      aria-valuetext={valueText}
+      style={meterStyle}
+    >
+      <span className="progress-meter-track" aria-hidden="true">
+        <span className="progress-meter-fill" />
+      </span>
+      <strong>{indeterminate ? "" : `${rounded}%`}</strong>
+    </div>
+  );
+}
+
+function StreamingAudioQueue({
+  segments,
+  status,
+}: {
+  segments: StreamSegment[];
+  status: string;
+}) {
+  const sortedSegments = useMemo(
+    () => [...segments].sort((left, right) => left.sequence - right.sequence),
+    [segments],
+  );
+  const [activeSequence, setActiveSequence] = useState<number | null>(null);
+  const [continuePlayback, setContinuePlayback] = useState(false);
+
+  useEffect(() => {
+    if (sortedSegments.length === 0) {
+      setActiveSequence(null);
+      return;
+    }
+    if (
+      activeSequence === null ||
+      !sortedSegments.some((segment) => segment.sequence === activeSequence)
+    ) {
+      setActiveSequence(sortedSegments[0].sequence);
+    }
+  }, [activeSequence, sortedSegments]);
+
+  const activeIndex = sortedSegments.findIndex(
+    (segment) => segment.sequence === activeSequence,
+  );
+  const activeSegment =
+    activeIndex >= 0
+      ? sortedSegments[activeIndex]
+      : (sortedSegments[0] ?? null);
+  const nextSegment =
+    activeIndex >= 0 ? (sortedSegments[activeIndex + 1] ?? null) : null;
+  const waitingForMore =
+    Boolean(activeSegment) &&
+    !nextSegment &&
+    (status === "queued" || status === "running");
+
+  function handleSegmentEnded() {
+    if (!nextSegment) {
+      setContinuePlayback(false);
+      return;
+    }
+    setContinuePlayback(true);
+    setActiveSequence(nextSegment.sequence);
+  }
+
+  return (
+    <div className="stream-panel">
+      <div className="stream-heading">
+        <h3>Listen while creating</h3>
+        <span>{sortedSegments.length} ready</span>
+      </div>
+      {activeSegment ? (
+        <>
+          <p className="stream-now-playing">
+            <strong>{activeSegment.chapter_title}</strong>
+            <span>Paragraph {activeSegment.paragraph_index + 1}</span>
+          </p>
+          <ThemedAudioPlayer
+            src={mediaUrl(activeSegment.audio_url)}
+            label="Streaming audiobook player"
+            playLabel="Play generated audio"
+            pauseLabel="Pause generated audio"
+            seekLabel="Generated audio playback position"
+            muteLabel="Mute generated audio"
+            unmuteLabel="Unmute generated audio"
+            autoPlayOnLoad={continuePlayback}
+            onEnded={handleSegmentEnded}
+          />
+          <p className="stream-preview">{activeSegment.text_preview}</p>
+          {nextSegment && (
+            <p className="stream-next">Up next: {nextSegment.text_preview}</p>
+          )}
+          {waitingForMore && (
+            <p className="stream-waiting">Waiting for the next paragraph...</p>
+          )}
+        </>
+      ) : (
+        <p className="stream-waiting">
+          Audio will appear here after the first paragraph is ready.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ThemedAudioPlayer({
+  src,
+  label = "Sample audio player",
+  playLabel = "Play sample",
+  pauseLabel = "Pause sample",
+  seekLabel = "Sample playback position",
+  muteLabel = "Mute sample",
+  unmuteLabel = "Unmute sample",
+  autoPlayOnLoad = false,
+  onEnded,
+}: {
+  src: string;
+  label?: string;
+  playLabel?: string;
+  pauseLabel?: string;
+  seekLabel?: string;
+  muteLabel?: string;
+  unmuteLabel?: string;
+  autoPlayOnLoad?: boolean;
+  onEnded?: () => void;
+}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -2457,6 +2648,20 @@ function ThemedAudioPlayer({ src }: { src: string }) {
     setDuration(0);
     setIsPlaying(false);
   }, [src]);
+
+  useEffect(() => {
+    if (!autoPlayOnLoad) {
+      return;
+    }
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    void audio.play().then(
+      () => setIsPlaying(true),
+      () => setIsPlaying(false),
+    );
+  }, [autoPlayOnLoad, src]);
 
   function syncDuration() {
     const audio = audioRef.current;
@@ -2510,7 +2715,7 @@ function ThemedAudioPlayer({ src }: { src: string }) {
   } as CSSProperties;
 
   return (
-    <div className="themed-audio-player" aria-label="Sample audio player">
+    <div className="themed-audio-player" aria-label={label}>
       <audio
         className="themed-audio-element"
         ref={audioRef}
@@ -2521,12 +2726,15 @@ function ThemedAudioPlayer({ src }: { src: string }) {
         onTimeUpdate={syncCurrentTime}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onEnded={() => setIsPlaying(false)}
+        onEnded={() => {
+          setIsPlaying(false);
+          onEnded?.();
+        }}
       />
       <button
         className="player-icon-button"
         type="button"
-        aria-label={isPlaying ? "Pause sample" : "Play sample"}
+        aria-label={isPlaying ? pauseLabel : playLabel}
         onClick={() => void togglePlayback()}
       >
         {isPlaying ? (
@@ -2545,7 +2753,7 @@ function ThemedAudioPlayer({ src }: { src: string }) {
         max={Math.max(duration, 0)}
         step="0.1"
         value={Math.min(currentTime, duration || currentTime)}
-        aria-label="Sample playback position"
+        aria-label={seekLabel}
         disabled={duration <= 0}
         style={rangeStyle}
         onChange={(event) => handleSeek(Number(event.currentTarget.value))}
@@ -2553,7 +2761,7 @@ function ThemedAudioPlayer({ src }: { src: string }) {
       <button
         className="player-icon-button player-volume-button"
         type="button"
-        aria-label={isMuted ? "Unmute sample" : "Mute sample"}
+        aria-label={isMuted ? unmuteLabel : muteLabel}
         onClick={toggleMute}
       >
         {isMuted ? (

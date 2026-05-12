@@ -148,7 +148,8 @@ Imports are local uploads only. URL import, ZIP import, audio/video transcriptio
 6. For Chatterbox Turbo, import character voices, assign selected paragraph text to cast members, and insert paralinguistic tags from the paragraph inspector.
 7. Use **Listen to sample** to preview the selected paragraph.
 8. Use **Create audiobook** to start background generation.
-9. Download chapter audio, subtitles, and the final audiobook package from the render panel.
+9. Use **Listen while creating** to play ready paragraph audio while the rest of the book keeps synthesizing.
+10. Download chapter audio, subtitles, and the final audiobook package from the render panel.
 
 ## Custom Styles
 
