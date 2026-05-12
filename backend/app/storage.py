@@ -11,7 +11,9 @@ from typing import Dict, List
 from .models import Book, GenerateJob, VoiceStyle
 
 
-DEFAULT_STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_STORAGE_ROOT = REPO_ROOT / "storage"
+DEFAULT_BUNDLED_STYLES_ROOT = REPO_ROOT / "voice_styles"
 
 
 def configured_storage_root() -> Path:
@@ -21,7 +23,15 @@ def configured_storage_root() -> Path:
     return DEFAULT_STORAGE_ROOT.resolve()
 
 
+def configured_bundled_styles_root() -> Path:
+    configured = os.environ.get("WHISPBOOK_BUNDLED_STYLES")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return DEFAULT_BUNDLED_STYLES_ROOT.resolve()
+
+
 storage_root = configured_storage_root()
+bundled_styles_root = configured_bundled_styles_root()
 books_root = storage_root / "books"
 styles_root = storage_root / "styles"
 previews_root = storage_root / "previews"
@@ -186,8 +196,11 @@ def default_styles() -> Dict[str, VoiceStyle]:
 def list_styles() -> List[VoiceStyle]:
     ensure_storage()
     styles = default_styles()
-    for path in styles_root.glob("*.json"):
-        style = VoiceStyle.model_validate(read_json(path))
+    for path in style_json_paths(bundled_styles_root):
+        style = read_style(path)
+        styles[style.id] = public_style(style)
+    for path in style_json_paths(styles_root):
+        style = read_style(path)
         styles[style.id] = public_style(style)
     return list(styles.values())
 
@@ -196,10 +209,11 @@ def load_style(style_id: str) -> VoiceStyle:
     styles = default_styles()
     if style_id in styles:
         return styles[style_id]
-    path = styles_root / f"{style_id}.json"
-    if not path.exists():
-        raise FileNotFoundError(style_id)
-    return VoiceStyle.model_validate(read_json(path))
+    for root in [styles_root, bundled_styles_root]:
+        path = root / f"{style_id}.json"
+        if path.exists():
+            return read_style(path)
+    raise FileNotFoundError(style_id)
 
 
 def save_custom_style(style: VoiceStyle) -> VoiceStyle:
@@ -213,7 +227,8 @@ def save_custom_style(style: VoiceStyle) -> VoiceStyle:
 
 def public_style(style: VoiceStyle) -> VoiceStyle:
     if style.reference_audio_path:
-        style.reference_audio_url = style.reference_audio_url or file_url(style.reference_audio_path)
+        reference_audio_url = style.reference_audio_url or file_url(style.reference_audio_path)
+        style = style.model_copy(update={"reference_audio_url": reference_audio_url})
     return style.model_copy(update={"reference_audio_path": None})
 
 
@@ -246,9 +261,35 @@ def read_json(path: Path) -> dict:
         return json.load(file)
 
 
+def style_json_paths(root: Path) -> List[Path]:
+    if not root.exists():
+        return []
+    return sorted(root.glob("*.json"))
+
+
+def read_style(path: Path) -> VoiceStyle:
+    payload = read_json(path)
+    reference_audio_path = payload.get("reference_audio_path")
+    if reference_audio_path:
+        resolved = Path(reference_audio_path)
+        if not resolved.is_absolute():
+            payload["reference_audio_path"] = str((path.parent / resolved).resolve())
+    return VoiceStyle.model_validate(payload)
+
+
 def file_url(path: str | Path) -> str:
     resolved = Path(path).resolve()
-    return "/media/" + resolved.relative_to(storage_root).as_posix()
+    for root, prefix in [
+        (storage_root, "/media"),
+        (bundled_styles_root, "/style-media"),
+    ]:
+        try:
+            relative = resolved.relative_to(root.resolve())
+        except ValueError:
+            continue
+        return f"{prefix}/{relative.as_posix()}"
+    raise ValueError(f"{resolved} is not under a public media root")
+
 
 
 def sanitize_filename(filename: str) -> str:

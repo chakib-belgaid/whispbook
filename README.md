@@ -78,6 +78,7 @@ The frontend runs on `http://localhost:5173` and the API runs on `http://localho
 | --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `WHISPBOOK_API_URL`         | Frontend dev server    | Overrides the Vite proxy target for `/api` and `/media`.                                                                       |
 | `WHISPBOOK_STORAGE`         | Backend                | Sets the storage root for books, styles, previews, jobs, and generated media. Defaults to the repository `storage/` directory. |
+| `WHISPBOOK_BUNDLED_STYLES`  | Backend                | Sets the root for committed voice style presets. Defaults to the repository `voice_styles/` directory.                         |
 | `HF_HOME`                   | Hugging Face libraries | Moves the Hugging Face model cache away from the default `~/.cache/huggingface`.                                               |
 | `HF_TOKEN`                  | Hugging Face libraries | Authenticates model downloads when needed.                                                                                     |
 | `WHISPBOOK_ENABLE_MOCK_TTS` | Backend                | Enables the mock sine-wave TTS engine for local smoke tests when set to `1`.                                                   |
@@ -173,6 +174,23 @@ Custom style JSON can include engine parameters:
 For Chatterbox styles, upload a 5-10 second reference clip when you want the style to follow a known external voice or narration sample.
 
 Chatterbox Turbo also supports book-local character casts. Cast entries point to saved Turbo styles, while paragraph voice assignments are stored as highlighted text ranges. Paralinguistic tags stay inline in the paragraph text for TTS guidance, and generated subtitles omit those tags.
+
+### Bundled Voice Style Presets
+
+Commit-ready voice style presets live in `voice_styles/`. The backend loads these before user-created runtime styles from `storage/styles/`, so presets can be versioned while local uploads and generated cache files remain ignored.
+
+The bundled Chatterbox and Chatterbox Turbo presets use short normalized reference clips from public-domain LibriVox audiobooks:
+
+| Preset reader | LibriVox project | Source reference | License |
+| ------------- | ---------------- | ---------------- | ------- |
+| Kara Shallenberg | 175 | [A Little Princess](https://librivox.org/a-little-princess-by-frances-hodgson-burnett/) | Public domain audiobook from LibriVox |
+| Karen Savage | 1168 | [Anne of Green Gables](https://librivox.org/anne-of-green-gables-by-lucy-maud-montgomery-3/) | Public domain audiobook from LibriVox |
+| John Greenman | 3490 | [Following the Equator](https://librivox.org/following-the-equator-by-mark-twain/) | Public domain audiobook from LibriVox |
+| Mark Nelson | 5618 | [The Time Machine](https://librivox.org/the-time-machine-v3-by-h-g-wells/) | Public domain audiobook from LibriVox |
+| Elizabeth Klett | 6376 | [Wives and Daughters](https://librivox.org/wives-and-daughters-solo-version-by-elizabeth-gaskell/) | Public domain audiobook from LibriVox |
+| David Clarke | 9557 | [The Memoirs of Sherlock Holmes](https://librivox.org/the-memoirs-of-sherlock-holmes-by-sir-arthur-conan-doyle-2/) | Public domain audiobook from LibriVox |
+
+Only the preset JSON files and trimmed `reference.wav` clips are committed. Full source downloads created by the importer are cache files and should remain under ignored `storage/styles/`.
 
 ## Exported Generation Scripts
 
