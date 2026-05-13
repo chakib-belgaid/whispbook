@@ -205,9 +205,9 @@ Only the preset JSON files and trimmed `reference.wav` clips are committed. Full
 
 ## Asset Notices
 
-The raster visual assets in `docs/assets/` and `src/assets/` were generated for Whispbook with OpenAI `gpt-image-2` and are included in this repository under the project's MIT license.
+The raster visual assets in `docs/assets/` and `src/assets/` were generated for Whispbook with OpenAI image generation tools. The committed asset files are included in this repository under the project's MIT license.
 
-See [LICENSE](LICENSE) for the repository license and third-party asset/model notices.
+See [LICENSE](LICENSE) for the precise repository license and third-party asset/model notices, including service-use notes for generating new assets.
 
 ## Exported Generation Scripts
 

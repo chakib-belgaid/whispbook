@@ -27,9 +27,10 @@ Unless noted below, the Whispbook source code, documentation, and original
 project assets in this repository are released under the MIT License above.
 
 - Raster visual assets under docs/assets/ and src/assets/ were generated for
-  Whispbook with OpenAI gpt-image-2 and are distributed as part of this project
-  under the MIT License above. Use of the generation service and generated
-  output remains subject to OpenAI's applicable terms.
+  Whispbook with OpenAI image generation tools and are distributed as part of
+  this project under the MIT License above. The MIT License grant applies to the
+  committed asset files in this repository; OpenAI's service terms apply when
+  using OpenAI services, such as generating new or replacement assets.
 - Bundled voice style presets under voice_styles/ include short normalized
   reference.wav clips derived from public-domain LibriVox audiobooks identified
   in README.md. The trimmed clips remain public domain; the JSON preset metadata
