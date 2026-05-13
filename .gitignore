@@ -1,11 +1,14 @@
 node_modules/
 dist/
 .vite/
+.venv/
+.uv-cache/
 .env
 .env.*
 .DS_Store
 storage/
 backend/.venv/
+backend/.ruff_cache/
 backend/__pycache__/
 backend/app/__pycache__/
 backend/tests/__pycache__/

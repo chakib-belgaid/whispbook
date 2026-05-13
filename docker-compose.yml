@@ -1,13 +1,16 @@
 services:
   api:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       WHISPBOOK_STORAGE: /app/storage
+      WHISPBOOK_BUNDLED_STYLES: /app/voice_styles
     ports:
       - "8000:8000"
     volumes:
       - ./storage:/app/storage
+      - ./voice_styles:/app/voice_styles:ro
 
   web:
     image: node:20-bookworm
@@ -21,4 +24,3 @@ services:
       - .:/app
     depends_on:
       - api
-

@@ -5,6 +5,7 @@ import App from "./App";
 import type {
   Book,
   EngineCapabilities,
+  GenerateJob,
   HealthResponse,
   TTSCapabilities,
   VoiceStyle,
@@ -15,6 +16,10 @@ declare global {
 }
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+Object.defineProperty(window, "localStorage", {
+  configurable: true,
+  value: createMemoryStorage(),
+});
 
 const apiMock = vi.hoisted(() => ({
   createCustomStyle: vi.fn(),
@@ -32,6 +37,30 @@ const apiMock = vi.hoisted(() => ({
 }));
 
 vi.mock("./lib/api", () => apiMock);
+
+function createMemoryStorage(): Storage {
+  const items = new Map<string, string>();
+  return {
+    get length() {
+      return items.size;
+    },
+    clear() {
+      items.clear();
+    },
+    getItem(key: string) {
+      return items.get(String(key)) ?? null;
+    },
+    key(index: number) {
+      return Array.from(items.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      items.delete(String(key));
+    },
+    setItem(key: string, value: string) {
+      items.set(String(key), String(value));
+    },
+  };
+}
 
 describe("App review fixes", () => {
   let mountedRoots: Root[] = [];
@@ -81,6 +110,33 @@ describe("App review fixes", () => {
     });
 
     expect(activeParagraphText(container)).toBe("Fresh paragraph");
+  });
+
+  it("shows progress while loading imported books", async () => {
+    const firstImport = deferred<Book>();
+    apiMock.importBook.mockReturnValueOnce(firstImport.promise);
+    const { container } = await renderApp();
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["fresh"], "fresh.md", { type: "text/markdown" })],
+    });
+
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const progress = container.querySelector<HTMLElement>(
+      '[role="progressbar"][aria-label="Book loading progress"]',
+    );
+    expect(progress?.getAttribute("aria-valuenow")).toBe("100");
+    expect(container.textContent).toContain("Loading fresh.md");
+
+    await act(async () => {
+      firstImport.resolve(sampleBook("fresh", "Fresh", "fresh.md"));
+    });
   });
 
   it("uses button semantics with Enter and Space keyboard selection for paragraphs", async () => {
@@ -408,6 +464,177 @@ describe("App review fixes", () => {
     const audio = player?.querySelector("audio");
     expect(audio?.hasAttribute("controls")).toBe(false);
     expect(audio?.getAttribute("src")).toBe("/media/sample.m4a");
+  });
+
+  it("shows progress while generating paragraph sample audio", async () => {
+    const preview = deferred<ReturnType<typeof samplePreview>>();
+    apiMock.createPreview.mockReturnValueOnce(preview.promise);
+    const { container } = await renderApp();
+
+    await act(async () => {
+      buttonByText(container, "Listen to sample").click();
+    });
+
+    const progress = container.querySelector<HTMLElement>(
+      '[role="progressbar"][aria-label="Paragraph audio generation progress"]',
+    );
+    expect(progress?.getAttribute("aria-valuetext")).toBe(
+      "Creating paragraph audio",
+    );
+    expect(container.textContent).toContain("Creating paragraph audio");
+
+    await act(async () => {
+      preview.resolve(samplePreview());
+    });
+  });
+
+  it("renders audiobook generation progress as an accessible themed meter", async () => {
+    apiMock.startGeneration.mockResolvedValue(
+      sampleJob({
+        progress: 42,
+        message: "Rendering speech (1/2 paragraphs)",
+      }),
+    );
+    const { container } = await renderApp();
+
+    await act(async () => {
+      buttonByText(container, "Create audiobook").click();
+    });
+
+    const progress = container.querySelector<HTMLElement>(
+      '[role="progressbar"][aria-label="Audiobook creation progress"]',
+    );
+    expect(progress?.getAttribute("aria-valuenow")).toBe("42");
+    expect(progress?.textContent).toContain("42%");
+    expect(container.textContent).toContain(
+      "Rendering speech (1/2 paragraphs)",
+    );
+  });
+
+  it("plays ready audiobook stream segments while polling for newly generated audio", async () => {
+    const firstJob = sampleJob({
+      stream_segments: [
+        sampleStreamSegment({
+          sequence: 0,
+          audio_url: "/media/generated/job/ch-1/segments/0000.wav",
+          text_preview: "First paragraph.",
+        }),
+      ],
+    });
+    const secondJob = sampleJob({
+      stream_segments: [
+        ...firstJob.stream_segments,
+        sampleStreamSegment({
+          sequence: 1,
+          paragraph_id: "p-2",
+          paragraph_index: 1,
+          audio_url: "/media/generated/job/ch-1/segments/0001.wav",
+          text_preview: "Second paragraph.",
+        }),
+      ],
+    });
+    apiMock.startGeneration.mockResolvedValue(firstJob);
+    apiMock.getJob.mockResolvedValue(secondJob);
+    vi.useFakeTimers();
+
+    try {
+      const { container } = await renderApp();
+
+      await act(async () => {
+        buttonByText(container, "Create audiobook").click();
+      });
+
+      expect(container.textContent).toContain("Listen while creating");
+      expect(container.textContent).toContain("First paragraph.");
+      let audio = container.querySelector<HTMLAudioElement>(
+        '[aria-label="Streaming audiobook player"] audio',
+      );
+      expect(audio?.getAttribute("src")).toBe(
+        "/media/generated/job/ch-1/segments/0000.wav",
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1800);
+      });
+
+      expect(container.textContent).toContain("Second paragraph.");
+      audio = container.querySelector<HTMLAudioElement>(
+        '[aria-label="Streaming audiobook player"] audio',
+      );
+      expect(audio?.getAttribute("src")).toBe(
+        "/media/generated/job/ch-1/segments/0000.wav",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("continues playback when the next stream segment arrives after waiting", async () => {
+    const firstJob = sampleJob({
+      stream_segments: [
+        sampleStreamSegment({
+          sequence: 0,
+          audio_url: "/media/generated/job/ch-1/segments/0000.wav",
+          text_preview: "First paragraph.",
+        }),
+      ],
+    });
+    const secondJob = sampleJob({
+      stream_segments: [
+        ...firstJob.stream_segments,
+        sampleStreamSegment({
+          sequence: 1,
+          paragraph_id: "p-2",
+          paragraph_index: 1,
+          audio_url: "/media/generated/job/ch-1/segments/0001.wav",
+          text_preview: "Second paragraph.",
+        }),
+      ],
+    });
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
+    apiMock.startGeneration.mockResolvedValue(firstJob);
+    apiMock.getJob.mockResolvedValue(secondJob);
+    vi.useFakeTimers();
+
+    try {
+      const { container } = await renderApp();
+
+      await act(async () => {
+        buttonByText(container, "Create audiobook").click();
+      });
+
+      const firstAudio = container.querySelector<HTMLAudioElement>(
+        '[aria-label="Streaming audiobook player"] audio',
+      );
+      expect(firstAudio?.getAttribute("src")).toBe(
+        "/media/generated/job/ch-1/segments/0000.wav",
+      );
+
+      await act(async () => {
+        firstAudio?.dispatchEvent(new Event("ended", { bubbles: true }));
+      });
+
+      expect(container.textContent).toContain(
+        "Waiting for the next paragraph...",
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1800);
+      });
+
+      const nextAudio = container.querySelector<HTMLAudioElement>(
+        '[aria-label="Streaming audiobook player"] audio',
+      );
+      expect(nextAudio?.getAttribute("src")).toBe(
+        "/media/generated/job/ch-1/segments/0001.wav",
+      );
+      expect(play).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      play.mockRestore();
+    }
   });
 
   it("passes the selected reference audio start point when saving a custom style", async () => {
@@ -954,5 +1181,65 @@ function samplePreview() {
     audio_url: "/media/sample.m4a",
     vtt_url: "/media/sample.vtt",
     duration_seconds: 12,
+  };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function sampleJob(overrides: Partial<GenerateJob> = {}): GenerateJob {
+  return {
+    id: "job-1",
+    book_id: "existing",
+    status: "running",
+    created_at: 1,
+    updated_at: 1,
+    message: "Rendering speech",
+    progress: 0,
+    chapters: [
+      {
+        chapter_id: "existing-chapter-1",
+        title: "Existing Chapter",
+        status: "generating",
+        message: "Rendering speech",
+        audio_url: null,
+        vtt_url: null,
+        srt_url: null,
+      },
+    ],
+    stream_segments: [],
+    final_audio_url: null,
+    final_vtt_url: null,
+    final_srt_url: null,
+    final_package_url: null,
+    error: null,
+    ...overrides,
+  };
+}
+
+function sampleStreamSegment(
+  overrides: Partial<GenerateJob["stream_segments"][number]> = {},
+): GenerateJob["stream_segments"][number] {
+  return {
+    sequence: 0,
+    chapter_id: "existing-chapter-1",
+    paragraph_id: "p-1",
+    chapter_title: "Existing Chapter",
+    paragraph_index: 0,
+    audio_url: "/media/generated/job/ch-1/segments/0000.wav",
+    duration_seconds: 1.25,
+    text_preview: "First paragraph.",
+    ...overrides,
   };
 }

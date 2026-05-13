@@ -65,4 +65,4 @@ jobs:
         run: uv run --frozen pytest tests
 
       - name: Build backend image
-        run: docker build -t whispbook-api:${{ github.sha }} backend
+        run: docker build -t whispbook-api:${{ github.sha }} -f backend/Dockerfile .

@@ -163,6 +163,17 @@ class ChapterJobState(BaseModel):
     srt_url: Optional[str] = None
 
 
+class StreamSegment(BaseModel):
+    sequence: int = Field(ge=0)
+    chapter_id: str
+    paragraph_id: str
+    chapter_title: str
+    paragraph_index: int = Field(ge=0)
+    audio_url: str
+    duration_seconds: float = Field(ge=0)
+    text_preview: str
+
+
 class GenerateJob(BaseModel):
     id: str
     book_id: str
@@ -172,6 +183,7 @@ class GenerateJob(BaseModel):
     message: str = ""
     progress: float = 0
     chapters: List[ChapterJobState] = Field(default_factory=list)
+    stream_segments: List[StreamSegment] = Field(default_factory=list)
     final_audio_url: Optional[str] = None
     final_vtt_url: Optional[str] = None
     final_srt_url: Optional[str] = None

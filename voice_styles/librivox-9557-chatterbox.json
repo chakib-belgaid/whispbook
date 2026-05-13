@@ -1,0 +1,19 @@
+{
+  "id": "librivox-9557-chatterbox",
+  "name": "Male - David Clarke (Chatterbox)",
+  "engine": "chatterbox",
+  "description": "Imported from LibriVox project 9557. Source: https://librivox.org/the-memoirs-of-sherlock-holmes-by-sir-arthur-conan-doyle-2/. Public domain audiobook from LibriVox.",
+  "voice": "af_heart",
+  "language": "en",
+  "speed": 1.0,
+  "exaggeration": 0.5,
+  "cfg_weight": 0.5,
+  "temperature": 0.8,
+  "top_p": 1.0,
+  "paragraph_gap_ms": 450,
+  "comma_pause_ms": 160,
+  "prompt_prefix": "",
+  "reference_audio_path": "librivox-9557-chatterbox/reference.wav",
+  "reference_audio_url": null,
+  "custom": true
+}

@@ -1,0 +1,19 @@
+{
+  "id": "librivox-1168-chatterbox",
+  "name": "Female - Karen Savage (Chatterbox)",
+  "engine": "chatterbox",
+  "description": "Imported from LibriVox project 1168. Source: https://librivox.org/anne-of-green-gables-by-lucy-maud-montgomery-3/. Public domain audiobook from LibriVox.",
+  "voice": "af_heart",
+  "language": "en",
+  "speed": 1.0,
+  "exaggeration": 0.5,
+  "cfg_weight": 0.5,
+  "temperature": 0.8,
+  "top_p": 1.0,
+  "paragraph_gap_ms": 450,
+  "comma_pause_ms": 160,
+  "prompt_prefix": "",
+  "reference_audio_path": "librivox-1168-chatterbox/reference.wav",
+  "reference_audio_url": null,
+  "custom": true
+}

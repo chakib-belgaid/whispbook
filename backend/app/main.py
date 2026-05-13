@@ -34,6 +34,7 @@ from .models import (
     VoiceStyle,
 )
 from .storage import (
+    bundled_styles_root,
     delete_book,
     file_url,
     list_books,
@@ -64,7 +65,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 storage_root.mkdir(parents=True, exist_ok=True)
+bundled_styles_root.mkdir(parents=True, exist_ok=True)
 app.mount("/media", StaticFiles(directory=str(storage_root)), name="media")
+app.mount("/style-media", StaticFiles(directory=str(bundled_styles_root)), name="style-media")
 
 tts_manager = TTSManager()
 job_runner = JobRunner(tts_manager)
