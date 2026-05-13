@@ -19,3 +19,24 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Third-party assets and model notices
+------------------------------------
+
+Unless noted below, the Whispbook source code, documentation, and original
+project assets in this repository are released under the MIT License above.
+
+- Raster visual assets under docs/assets/ and src/assets/ were generated for
+  Whispbook with OpenAI image generation tools and are distributed as part of
+  this project under the MIT License above. The MIT License grant applies to the
+  committed asset files in this repository; OpenAI's service terms apply when
+  using OpenAI services, such as generating new or replacement assets.
+- Bundled voice style presets under voice_styles/ include short normalized
+  reference.wav clips derived from public-domain LibriVox audiobooks identified
+  in README.md. The trimmed clips remain public domain; the JSON preset metadata
+  is released under the MIT License above.
+- TTS model weights are not redistributed by this repository. Kokoro,
+  Chatterbox, and Chatterbox Turbo are downloaded from Hugging Face on demand
+  and retain their upstream licenses: Apache-2.0 for hexgrad/Kokoro-82M, MIT for
+  ResembleAI/chatterbox, and MIT for ResembleAI/chatterbox-turbo.
+- Third-party software dependencies retain their own licenses.

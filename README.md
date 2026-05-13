@@ -133,6 +133,17 @@ PY
 
 Set `HF_HOME=/path/to/cache` before running the command if you want a custom cache location.
 
+## TTS Model References
+
+Whispbook does not vendor TTS model weights. Kokoro, Chatterbox, and Chatterbox Turbo are downloaded by their upstream libraries when first used, so their model cards and licenses apply to those runtime downloads.
+
+| Engine           | Upstream reference                                                                | License    | Whispbook usage                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Kokoro           | [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)                   | Apache-2.0 | Supplies the model weights and `voices/*.pt` files used by the predefined Kokoro voice IDs in `backend/app/capabilities.py`. |
+| Chatterbox       | [ResembleAI/chatterbox](https://huggingface.co/ResembleAI/chatterbox)             | MIT        | Used for the standard Chatterbox engine, including default generation and custom reference-audio styles.                     |
+| Chatterbox Turbo | [ResembleAI/chatterbox-turbo](https://huggingface.co/ResembleAI/chatterbox-turbo) | MIT        | Used for English Turbo generation, character casts, and inline paralinguistic tags.                                          |
+| Mock TTS         | Local Whispbook test engine                                                       | MIT        | Generates a synthetic sine-wave voice for smoke tests only when `WHISPBOOK_ENABLE_MOCK_TTS=1`.                               |
+
 ## Document Import
 
 Whispbook uses Microsoft MarkItDown to convert uploaded local documents into Markdown before chapter and paragraph extraction. Supported imports are PDF, DOCX, PPTX, XLS, XLSX, EPUB, HTML, TXT, Markdown, CSV, JSON, and XML.
@@ -192,6 +203,12 @@ The bundled Chatterbox and Chatterbox Turbo presets use short normalized referen
 
 Only the preset JSON files and trimmed `reference.wav` clips are committed. Full source downloads created by the importer are cache files and should remain under ignored `storage/styles/`.
 
+## Asset Notices
+
+The raster visual assets in `docs/assets/` and `src/assets/` were generated for Whispbook with OpenAI image generation tools. The committed asset files are included in this repository under the project's MIT license.
+
+See [LICENSE](LICENSE) for the precise repository license and third-party asset/model notices, including service-use notes for generating new assets.
+
 ## Exported Generation Scripts
 
 Use **Export script** in the Audiobook panel to download a Python script for the current voice settings. The script includes:
@@ -242,4 +259,4 @@ When changing backend dependencies, edit `backend/pyproject.toml` with `uv add`,
 
 ## License
 
-Whispbook is released under the [MIT License](LICENSE).
+Whispbook is released under the [MIT License](LICENSE). The license file also documents the bundled visual assets, LibriVox reference clips, and runtime TTS model notices.
