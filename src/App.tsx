@@ -10,7 +10,6 @@ import {
   FileText,
   FileUp,
   Loader2,
-  Mic2,
   Pause,
   Play,
   Redo2,
@@ -62,6 +61,7 @@ import {
 } from "./lib/generationScript";
 import type {
   Book,
+  CastMember,
   Chapter,
   EngineCapabilities,
   EngineName,
@@ -71,13 +71,43 @@ import type {
   StyleOverride,
   TTSCapabilities,
   VoiceStyle,
+  VoiceRange,
 } from "./types";
+
+const defaultTtsModel: EngineName = "chatterbox_turbo";
+
+const ttsModelOptions: Array<{ value: EngineName; label: string }> = [
+  { value: "chatterbox_turbo", label: "Chatterbox Turbo" },
+  { value: "chatterbox", label: "Chatterbox" },
+  { value: "kokoro", label: "Kokoro" },
+];
+
+const ttsModelLayoutByEngine: Partial<
+  Record<EngineName, { title: string; className: string }>
+> = {
+  chatterbox_turbo: {
+    title: "Turbo narrator",
+    className: "model-settings-section--turbo",
+  },
+  chatterbox: {
+    title: "Chatterbox narrator",
+    className: "model-settings-section--chatterbox",
+  },
+  kokoro: {
+    title: "Kokoro narrator",
+    className: "model-settings-section--kokoro",
+  },
+  mock: {
+    title: "Mock narrator",
+    className: "model-settings-section--mock",
+  },
+};
 
 const defaultStyleDraft: StyleOverride = {
   style_id: "neutral",
-  engine: "kokoro",
-  voice: "af_heart",
-  language: "a",
+  engine: defaultTtsModel,
+  voice: "reference",
+  language: "en",
   speed: 1,
   exaggeration: 0.5,
   cfg_weight: 0.5,
@@ -89,6 +119,22 @@ const defaultStyleDraft: StyleOverride = {
 };
 
 const storedStyleDraftKey = "whispbook.styleDraft";
+
+const defaultStyleIdByEngine: Partial<Record<EngineName, string>> = {
+  kokoro: "neutral",
+  chatterbox: "chatterbox-default",
+  chatterbox_turbo: "chatterbox-turbo-default",
+  mock: "neutral",
+};
+
+const castColorPalette = [
+  "#5f9ed1",
+  "#d17a5f",
+  "#66a96f",
+  "#b879d6",
+  "#d1a45f",
+  "#55a7a2",
+];
 
 const documentImportAccept = [
   "application/pdf",
@@ -142,6 +188,7 @@ interface ChapterEditSnapshot {
     id: string;
     text: string;
     included: boolean;
+    voice_ranges: VoiceRange[];
   }>;
 }
 
@@ -162,15 +209,26 @@ interface RangeSettingConfig {
 
 interface EngineSettingsConfig {
   language: boolean;
-  promptPrefix: boolean;
   ranges: RangeSettingConfig[];
+}
+
+interface TextSelectionRange {
+  paragraphId: string;
+  start: number;
+  end: number;
+}
+
+interface VoiceHighlightSegment {
+  key: string;
+  text: string;
+  castName: string | null;
+  color: string | null;
 }
 
 const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
   {
     kokoro: {
       language: true,
-      promptPrefix: false,
       ranges: [
         {
           key: "speed",
@@ -203,7 +261,6 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
     },
     chatterbox: {
       language: true,
-      promptPrefix: true,
       ranges: [
         {
           key: "exaggeration",
@@ -246,20 +303,10 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
           defaultValue: 450,
           suffix: "ms",
         },
-        {
-          key: "comma_pause_ms",
-          label: "Comma pause",
-          min: 0,
-          max: 600,
-          step: 20,
-          defaultValue: 160,
-          suffix: "ms",
-        },
       ],
     },
     chatterbox_turbo: {
       language: false,
-      promptPrefix: true,
       ranges: [
         {
           key: "temperature",
@@ -286,20 +333,10 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
           defaultValue: 450,
           suffix: "ms",
         },
-        {
-          key: "comma_pause_ms",
-          label: "Comma pause",
-          min: 0,
-          max: 600,
-          step: 20,
-          defaultValue: 160,
-          suffix: "ms",
-        },
       ],
     },
     mock: {
       language: false,
-      promptPrefix: false,
       ranges: [
         {
           key: "paragraph_gap_ms",
@@ -326,6 +363,7 @@ const engineSettingsByModel: Partial<Record<EngineName, EngineSettingsConfig>> =
 function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const styleReferenceRef = useRef<HTMLInputElement | null>(null);
+  const castVoiceInputRef = useRef<HTMLInputElement | null>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [styles, setStyles] = useState<VoiceStyle[]>([]);
@@ -352,7 +390,7 @@ function App() {
     Record<string, ChapterEditHistory>
   >({});
   const [customName, setCustomName] = useState("");
-  const [customEngine, setCustomEngine] = useState<EngineName>("chatterbox");
+  const [customEngine, setCustomEngine] = useState<EngineName>(defaultTtsModel);
   const [customParams, setCustomParams] = useState(
     '{"speed": 0.95, "exaggeration": 0.65, "cfg_weight": 0.35}',
   );
@@ -360,6 +398,13 @@ function App() {
   const [customReferenceStartSeconds, setCustomReferenceStartSeconds] =
     useState(0);
   const [activePane, setActivePane] = useState<WorkbenchPane>("manuscript");
+  const [selectedAnnotationRange, setSelectedAnnotationRange] =
+    useState<TextSelectionRange | null>(null);
+  const [paragraphScrollTops, setParagraphScrollTops] = useState<
+    Record<string, number>
+  >({});
+  const [selectedCastId, setSelectedCastId] = useState("");
+  const [customTag, setCustomTag] = useState("");
 
   useEffect(() => {
     void boot();
@@ -428,6 +473,19 @@ function App() {
     );
   }, [activeChapter, selectedParagraphId]);
 
+  useEffect(() => {
+    setSelectedAnnotationRange(null);
+  }, [selectedParagraph?.id]);
+
+  useEffect(() => {
+    const firstCastId = book?.cast[0]?.id ?? "";
+    setSelectedCastId((current) =>
+      current && book?.cast.some((member) => member.id === current)
+        ? current
+        : firstCastId,
+    );
+  }, [book?.cast]);
+
   const activeHistory = activeChapter ? chapterHistory[activeChapter.id] : null;
   const canUndoChapter = Boolean(activeHistory?.past.length);
   const canRedoChapter = Boolean(activeHistory?.future.length);
@@ -458,7 +516,10 @@ function App() {
       activateBook(firstBook);
       const storedDraft = readStoredStyleDraft();
       setStyleDraft((current) =>
-        normalizeStyleDraft(storedDraft ?? current, nextCapabilities),
+        ensureAvailableStyleDraft(
+          normalizeStyleDraft(storedDraft ?? current, nextCapabilities),
+          nextStyles,
+        ),
       );
       setError(null);
     } catch (caught) {
@@ -596,12 +657,18 @@ function App() {
     }
     setBusy("Previewing");
     setError(null);
+    const requestStyle = ensureAvailableStyleDraft(styleDraft, styles);
+    if (requestStyle !== styleDraft) {
+      setStyleDraft(requestStyle);
+    }
     try {
       const preview = await createPreview(
         book.id,
         selectedParagraph.text,
-        styleDraft,
+        requestStyle,
         selectedParagraph.text,
+        book.cast,
+        selectedParagraph.voice_ranges,
       );
       setPreviewUrl(preview.audio_url);
     } catch (caught) {
@@ -628,8 +695,12 @@ function App() {
     }
     setBusy("Starting");
     setError(null);
+    const requestStyle = ensureAvailableStyleDraft(styleDraft, styles);
+    if (requestStyle !== styleDraft) {
+      setStyleDraft(requestStyle);
+    }
     try {
-      const nextJob = await startGeneration(saved.id, chapterIds, styleDraft);
+      const nextJob = await startGeneration(saved.id, chapterIds, requestStyle);
       setJob(nextJob);
     } catch (caught) {
       setError(messageFromError(caught));
@@ -643,7 +714,11 @@ function App() {
       return;
     }
     try {
-      const script = buildGenerationScript(book, styleDraft, {
+      const scriptStyle = ensureAvailableStyleDraft(styleDraft, styles);
+      if (scriptStyle !== styleDraft) {
+        setStyleDraft(scriptStyle);
+      }
+      const script = buildGenerationScript(book, scriptStyle, {
         defaultApiUrl: defaultBackendUrlFromLocation(window.location),
       });
       downloadTextFile(
@@ -756,6 +831,220 @@ function App() {
         styleReferenceRef.current.value = "";
       }
     }
+  }
+
+  async function handleCastVoiceImport(
+    fileList: FileList | null,
+  ): Promise<void> {
+    const files = Array.from(fileList ?? []);
+    if (castVoiceInputRef.current) {
+      castVoiceInputRef.current.value = "";
+    }
+    if (files.length === 0) {
+      return;
+    }
+
+    setBusy("Importing cast");
+    setError(null);
+    try {
+      const createdMembers: CastMember[] = [];
+      for (const file of files) {
+        const name = characterNameFromFilename(file.name);
+        const created = await createCustomStyle({
+          name,
+          engine: "chatterbox_turbo",
+          paramsJson: JSON.stringify({
+            description: `Character voice for ${name}`,
+            voice: "reference",
+            language: "en",
+          }),
+          referenceAudio: file,
+          referenceStartSeconds: 0,
+        });
+        setStyles((current) => [
+          created,
+          ...current.filter((style) => style.id !== created.id),
+        ]);
+        createdMembers.push({
+          id: crypto.randomUUID(),
+          name,
+          style_id: created.id,
+          color:
+            castColorPalette[
+              ((book?.cast.length ?? 0) + createdMembers.length) %
+                castColorPalette.length
+            ],
+        });
+      }
+      if (createdMembers.length > 0) {
+        updateBook((current) => ({
+          ...current,
+          cast: [...current.cast, ...createdMembers],
+        }));
+        setSelectedCastId(createdMembers[0].id);
+      }
+    } catch (caught) {
+      setError(
+        `Could not import character voices: ${messageFromError(caught)}`,
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function updateCastMemberName(memberId: string, name: string): void {
+    updateBook((current) => ({
+      ...current,
+      cast: current.cast.map((member) =>
+        member.id === memberId ? { ...member, name } : member,
+      ),
+    }));
+  }
+
+  function removeCastMember(memberId: string): void {
+    updateBook((current) => ({
+      ...current,
+      cast: current.cast.filter((member) => member.id !== memberId),
+      chapters: current.chapters.map((chapter) => ({
+        ...chapter,
+        paragraphs: chapter.paragraphs.map((paragraph) => ({
+          ...paragraph,
+          voice_ranges: paragraph.voice_ranges.filter(
+            (range) => range.cast_id !== memberId,
+          ),
+        })),
+      })),
+    }));
+    setSelectedCastId((current) => (current === memberId ? "" : current));
+  }
+
+  function updateAnnotationSelectionFromTextarea(
+    paragraphId: string,
+    textarea: HTMLTextAreaElement,
+  ): void {
+    const range = selectionRangeWithinTextarea(textarea);
+    setSelectedAnnotationRange(range ? { paragraphId, ...range } : null);
+  }
+
+  function updateParagraphEditorScroll(
+    paragraphId: string,
+    textarea: HTMLTextAreaElement,
+  ): void {
+    const scrollTop = textarea.scrollTop;
+    setParagraphScrollTops((current) =>
+      current[paragraphId] === scrollTop
+        ? current
+        : { ...current, [paragraphId]: scrollTop },
+    );
+  }
+
+  function assignSelectedRangeToCast(
+    chapterId: string,
+    paragraphId: string,
+    castId = selectedCastId,
+  ): void {
+    const selection = selectedAnnotationRange;
+    if (
+      !selection ||
+      selection.paragraphId !== paragraphId ||
+      selection.start === selection.end ||
+      !castId
+    ) {
+      return;
+    }
+    setSelectedCastId(castId);
+    updateParagraph(chapterId, paragraphId, (current) => ({
+      ...current,
+      voice_ranges: assignVoiceRange(
+        current.voice_ranges,
+        selection.start,
+        selection.end,
+        castId,
+      ),
+    }));
+    setSelectedAnnotationRange(null);
+  }
+
+  function assignSelectedRangeToStyle(
+    chapterId: string,
+    paragraphId: string,
+    style: VoiceStyle,
+  ): void {
+    const selection = selectedAnnotationRange;
+    if (
+      !selection ||
+      selection.paragraphId !== paragraphId ||
+      selection.start === selection.end
+    ) {
+      return;
+    }
+    const existingMember = book?.cast.find(
+      (member) => member.style_id === style.id,
+    );
+    const castId = existingMember?.id ?? `saved-${style.id}`;
+    const nextMember: CastMember = existingMember ?? {
+      id: castId,
+      name: style.name,
+      style_id: style.id,
+      color:
+        castColorPalette[(book?.cast.length ?? 0) % castColorPalette.length],
+    };
+
+    setSelectedCastId(castId);
+    updateBook((current) => ({
+      ...current,
+      cast: current.cast.some((member) => member.id === castId)
+        ? current.cast
+        : [...current.cast, nextMember],
+      chapters: current.chapters.map((chapter) =>
+        chapter.id === chapterId
+          ? {
+              ...chapter,
+              paragraphs: chapter.paragraphs.map((paragraph) =>
+                paragraph.id === paragraphId
+                  ? {
+                      ...paragraph,
+                      voice_ranges: assignVoiceRange(
+                        paragraph.voice_ranges,
+                        selection.start,
+                        selection.end,
+                        castId,
+                      ),
+                    }
+                  : paragraph,
+              ),
+            }
+          : chapter,
+      ),
+    }));
+    setSelectedAnnotationRange(null);
+  }
+
+  function insertTagIntoParagraph(
+    chapterId: string,
+    paragraphId: string,
+    tag: string,
+  ): void {
+    const normalizedTag = normalizeTag(tag);
+    updateParagraph(chapterId, paragraphId, (current) => {
+      const insertion = insertionRangeForParagraph(
+        selectedAnnotationRange,
+        paragraphId,
+        codePointLength(current.text),
+      );
+      return insertTextAtRange(
+        current,
+        insertion.start,
+        insertion.end,
+        tagInsertionText(
+          current.text,
+          insertion.start,
+          insertion.end,
+          normalizedTag,
+        ),
+      );
+    });
+    setSelectedAnnotationRange(null);
   }
 
   function updateCustomReferenceStartSeconds(value: string): void {
@@ -897,31 +1186,51 @@ function App() {
     });
   }
 
-  const activeCapabilities = capabilityForEngine(
-    capabilities,
-    styleDraft.engine,
-  );
+  const activeEngine = styleDraft.engine ?? defaultTtsModel;
+  const activeEngineLayout =
+    ttsModelLayoutByEngine[activeEngine] ??
+    ttsModelLayoutByEngine[defaultTtsModel]!;
+  const activeCapabilities = capabilityForEngine(capabilities, activeEngine);
   const languageOptions = activeCapabilities?.languages ?? [];
   const voiceOptions = voiceOptionsForLanguage(
     activeCapabilities,
     styleDraft.language,
   );
-  const activeEngineSettings = settingsForEngine(styleDraft.engine);
-  const voicePresetStyles = styles;
-
-  const selectedStyleName =
-    voicePresetStyles.find((style) => style.id === styleDraft.style_id)?.name ??
-    "Manual";
+  const activeEngineSettings = settingsForEngine(activeEngine);
+  const savedVoiceStyles = styles.filter((style) => style.custom);
+  const characterVoiceStyles = savedVoiceStyles.filter(
+    (style) => style.engine === "chatterbox_turbo",
+  );
   const isImporting = busy?.startsWith("Importing") ?? false;
 
   return (
     <main className="app-shell">
       <header className="status-strip" aria-label="System status">
-        <span>Narration: {formatEngineName(styleDraft.engine)}</span>
+        <label className="status-model-field">
+          <span className="visually-hidden">TTS model</span>
+          <span className="status-model-prefix">Narration:</span>
+          <span className="status-model-select-shell">
+            <select
+              value={activeEngine}
+              aria-label="TTS model"
+              onChange={(event) => {
+                const engine = event.currentTarget.value as EngineName;
+                setStyleDraft((current) =>
+                  normalizeStyleDraft({ ...current, engine }, capabilities),
+                );
+                setPreviewUrl(null);
+              }}
+            >
+              {ttsModelOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </span>
+        </label>
         <span aria-hidden="true">|</span>
         <span>Audio export: {health?.ffmpeg ? "Ready" : "Unavailable"}</span>
-        <span aria-hidden="true">|</span>
-        <span>Voice: {selectedStyleName}</span>
         <button
           className="status-config-button"
           type="button"
@@ -1204,30 +1513,127 @@ function App() {
                               </span>
                             </label>
                             <div className="paragraph-copy">
-                              <textarea
-                                className="markdown-paragraph-editor"
-                                value={paragraph.text}
-                                disabled={!paragraph.included}
-                                spellCheck={false}
-                                rows={Math.max(
-                                  1,
-                                  Math.min(
-                                    8,
-                                    Math.ceil(paragraph.text.length / 88),
-                                  ),
-                                )}
-                                onFocus={() =>
-                                  setSelectedParagraphId(paragraph.id)
-                                }
-                                onChange={(event) => {
-                                  const text = event.currentTarget.value;
-                                  updateParagraph(
-                                    activeChapter.id,
-                                    paragraph.id,
-                                    (current) => ({ ...current, text }),
-                                  );
-                                }}
-                              />
+                              <div className="paragraph-editor-shell">
+                                <ParagraphVoiceHighlights
+                                  paragraph={paragraph}
+                                  cast={book.cast}
+                                  scrollTop={
+                                    paragraphScrollTops[paragraph.id] ?? 0
+                                  }
+                                />
+                                <textarea
+                                  className="markdown-paragraph-editor"
+                                  value={paragraph.text}
+                                  disabled={!paragraph.included}
+                                  spellCheck={false}
+                                  rows={Math.max(
+                                    1,
+                                    Math.min(
+                                      8,
+                                      Math.ceil(paragraph.text.length / 88),
+                                    ),
+                                  )}
+                                  onFocus={(event) => {
+                                    setSelectedParagraphId(paragraph.id);
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    );
+                                  }}
+                                  onClick={(event) =>
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onSelect={(event) =>
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onKeyUp={(event) =>
+                                    updateAnnotationSelectionFromTextarea(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onScroll={(event) =>
+                                    updateParagraphEditorScroll(
+                                      paragraph.id,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  onChange={(event) => {
+                                    const text = event.currentTarget.value;
+                                    const selection =
+                                      selectionRangeWithinTextarea(
+                                        event.currentTarget,
+                                      );
+                                    updateParagraph(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      (current) => ({
+                                        ...current,
+                                        text,
+                                        voice_ranges:
+                                          reconcileVoiceRangesAfterTextEdit(
+                                            current.text,
+                                            text,
+                                            current.voice_ranges,
+                                          ),
+                                      }),
+                                    );
+                                    setSelectedAnnotationRange(
+                                      selection
+                                        ? {
+                                            paragraphId: paragraph.id,
+                                            ...selection,
+                                          }
+                                        : null,
+                                    );
+                                  }}
+                                />
+                              </div>
+                              {paragraph.id === selectedParagraph?.id && (
+                                <ParagraphInspector
+                                  paragraph={paragraph}
+                                  cast={book.cast}
+                                  enabled={
+                                    styleDraft.engine === "chatterbox_turbo"
+                                  }
+                                  savedVoiceStyles={characterVoiceStyles}
+                                  tags={
+                                    capabilities?.chatterbox_turbo
+                                      ?.paralinguistic_tags ?? []
+                                  }
+                                  selectedRange={selectedAnnotationRange}
+                                  selectedCastId={selectedCastId}
+                                  customTag={customTag}
+                                  onAssignToCast={(castId) =>
+                                    assignSelectedRangeToCast(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      castId,
+                                    )
+                                  }
+                                  onAssignToStyle={(style) =>
+                                    assignSelectedRangeToStyle(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      style,
+                                    )
+                                  }
+                                  onInsertTag={(tag) =>
+                                    insertTagIntoParagraph(
+                                      activeChapter.id,
+                                      paragraph.id,
+                                      tag,
+                                    )
+                                  }
+                                  onCustomTagChange={setCustomTag}
+                                />
+                              )}
                             </div>
                             {paragraph.id === selectedParagraph?.id && (
                               <div
@@ -1304,13 +1710,13 @@ function App() {
                 <section className="settings-section ritual-section custom-style-section">
                   <div className="settings-heading">
                     <Wand2 size={19} aria-hidden="true" />
-                    <h2>Voice presets</h2>
+                    <h2>Saved voices</h2>
                   </div>
-                  {voicePresetStyles.length > 0 && (
+                  {savedVoiceStyles.length > 0 && (
                     <SelectField
-                      label="Saved voice preset"
+                      label="Saved voice"
                       value={
-                        voicePresetStyles.some(
+                        savedVoiceStyles.some(
                           (style) => style.id === styleDraft.style_id,
                         )
                           ? styleDraft.style_id
@@ -1318,14 +1724,16 @@ function App() {
                       }
                       onChange={(styleId) => {
                         if (!styleId) {
-                          setStyleDraft((current) => ({
-                            ...current,
-                            style_id: "",
-                          }));
+                          setStyleDraft((current) =>
+                            ensureAvailableStyleDraft(
+                              { ...current, style_id: "" },
+                              styles,
+                            ),
+                          );
                           setPreviewUrl(null);
                           return;
                         }
-                        const next = voicePresetStyles.find(
+                        const next = savedVoiceStyles.find(
                           (style) => style.id === styleId,
                         );
                         if (next) {
@@ -1340,7 +1748,7 @@ function App() {
                       }}
                     >
                       <option value="">Current settings</option>
-                      {voicePresetStyles.map((style) => (
+                      {savedVoiceStyles.map((style) => (
                         <option key={style.id} value={style.id}>
                           {style.name}
                         </option>
@@ -1436,93 +1844,116 @@ function App() {
                   )}
                 </section>
 
-                <section className="settings-section ritual-section narrator-section">
+                <section
+                  className={`settings-section ritual-section model-settings-section ${activeEngineLayout.className}`}
+                  data-testid="tts-model-layout"
+                  data-engine={activeEngine}
+                >
                   <div className="settings-heading">
-                    <Mic2 size={19} aria-hidden="true" />
-                    <h2>Narrator</h2>
+                    <Clock3 size={19} aria-hidden="true" />
+                    <h2>{activeEngineLayout.title}</h2>
                   </div>
-                  <SelectField
-                    label="Narration source"
-                    value={styleDraft.engine ?? "kokoro"}
-                    onChange={(value) => {
-                      const engine = value as EngineName;
-                      setStyleDraft((current) =>
-                        normalizeStyleDraft(
-                          { ...current, engine },
-                          capabilities,
-                        ),
-                      );
-                    }}
-                  >
-                    <option value="kokoro">Kokoro</option>
-                    <option value="chatterbox">Chatterbox</option>
-                    <option value="chatterbox_turbo">Chatterbox Turbo</option>
-                  </SelectField>
-                  <SelectField
-                    label="Narrator"
-                    value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
-                    disabled={voiceOptions.length === 0}
-                    onChange={(voice) =>
-                      setStyleDraft((current) => ({
-                        ...current,
-                        voice,
-                      }))
-                    }
-                  >
-                    {voiceOptions.map((voice) => (
-                      <option key={voice.value} value={voice.value}>
-                        {voice.label} ({voice.value})
-                      </option>
-                    ))}
-                  </SelectField>
-                  {activeEngineSettings.language && (
+                  <div className="model-primary-controls">
                     <SelectField
-                      label="Language"
-                      value={
-                        styleDraft.language ?? languageOptions[0]?.value ?? ""
-                      }
-                      disabled={languageOptions.length === 0}
-                      onChange={(language) =>
-                        setStyleDraft((current) =>
-                          normalizeStyleDraft(
-                            { ...current, language },
-                            capabilities,
-                          ),
-                        )
+                      label="Narrator"
+                      value={styleDraft.voice ?? voiceOptions[0]?.value ?? ""}
+                      disabled={voiceOptions.length === 0}
+                      onChange={(voice) =>
+                        setStyleDraft((current) => ({
+                          ...current,
+                          voice,
+                        }))
                       }
                     >
-                      {languageOptions.map((language) => (
-                        <option key={language.value} value={language.value}>
-                          {language.label}
+                      {voiceOptions.map((voice) => (
+                        <option key={voice.value} value={voice.value}>
+                          {voice.label}
                         </option>
                       ))}
                     </SelectField>
-                  )}
-                </section>
-
-                <section className="settings-section ritual-section rune-section">
-                  <div className="settings-heading">
-                    <Clock3 size={19} aria-hidden="true" />
-                    <h2>Voice fine-tuning</h2>
+                    {activeEngineSettings.language && (
+                      <SelectField
+                        label="Language"
+                        value={
+                          styleDraft.language ?? languageOptions[0]?.value ?? ""
+                        }
+                        disabled={languageOptions.length === 0}
+                        onChange={(language) =>
+                          setStyleDraft((current) =>
+                            normalizeStyleDraft(
+                              { ...current, language },
+                              capabilities,
+                            ),
+                          )
+                        }
+                      >
+                        {languageOptions.map((language) => (
+                          <option key={language.value} value={language.value}>
+                            {language.label}
+                          </option>
+                        ))}
+                      </SelectField>
+                    )}
                   </div>
+                  {activeEngine === "chatterbox_turbo" && (
+                    <div className="cast-import-panel">
+                      <input
+                        ref={castVoiceInputRef}
+                        className="visually-hidden"
+                        type="file"
+                        multiple
+                        accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                        aria-label="Import character voice files"
+                        onChange={(event) =>
+                          void handleCastVoiceImport(event.currentTarget.files)
+                        }
+                      />
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => castVoiceInputRef.current?.click()}
+                      >
+                        <Upload size={18} />
+                        <span>Import character voices</span>
+                      </button>
+                      {book.cast.length > 0 && (
+                        <div className="cast-list" aria-label="Character cast">
+                          {book.cast.map((member) => (
+                            <div className="cast-row" key={member.id}>
+                              <span
+                                className="cast-swatch"
+                                style={{ backgroundColor: member.color }}
+                                aria-hidden="true"
+                              />
+                              <label className="field">
+                                <span>Character name</span>
+                                <input
+                                  value={member.name}
+                                  onChange={(event) =>
+                                    updateCastMemberName(
+                                      member.id,
+                                      event.currentTarget.value,
+                                    )
+                                  }
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${member.name}`}
+                                title={`Remove ${member.name}`}
+                                onClick={() => removeCastMember(member.id)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <RitualDrawer title="Voice fine-tuning">
                     <div className="control-grid">
-                      {activeEngineSettings.promptPrefix && (
-                        <label className="field tts-prompt-field">
-                          <span>Narration guidance</span>
-                          <textarea
-                            rows={3}
-                            value={styleDraft.prompt_prefix ?? ""}
-                            onChange={(event) => {
-                              const promptPrefix = event.currentTarget.value;
-                              setStyleDraft((current) => ({
-                                ...current,
-                                prompt_prefix: promptPrefix,
-                              }));
-                            }}
-                          />
-                        </label>
-                      )}
                       {activeEngineSettings.ranges.map((control) => (
                         <RangeControl
                           key={control.key}
@@ -1646,6 +2077,304 @@ function App() {
         />
       )}
     </main>
+  );
+}
+
+function ParagraphVoiceHighlights({
+  paragraph,
+  cast,
+  scrollTop,
+}: {
+  paragraph: Paragraph;
+  cast: CastMember[];
+  scrollTop: number;
+}) {
+  const segments = voiceHighlightSegments(paragraph, cast);
+  if (!segments.some((segment) => segment.castName)) {
+    return null;
+  }
+
+  return (
+    <div className="paragraph-highlight-layer" aria-hidden="true">
+      <div
+        className="paragraph-highlight-content"
+        style={{ transform: `translateY(-${scrollTop}px)` }}
+      >
+        {segments.map((segment) =>
+          segment.castName ? (
+            <span
+              key={segment.key}
+              className="voice-highlight-segment"
+              data-testid="voice-range-highlight"
+              data-cast-name={segment.castName}
+              style={
+                {
+                  "--voice-color": segment.color ?? "#8a8a8a",
+                } as CSSProperties
+              }
+              title={segment.castName}
+            >
+              {segment.text}
+            </span>
+          ) : (
+            <span key={segment.key}>{segment.text}</span>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function voiceHighlightSegments(
+  paragraph: Paragraph,
+  cast: CastMember[],
+): VoiceHighlightSegment[] {
+  const castById = new Map(cast.map((member) => [member.id, member]));
+  const textLength = codePointLength(paragraph.text);
+  const ranges = paragraph.voice_ranges
+    .map((range) => {
+      const start = Math.max(0, Math.min(range.start, textLength));
+      const end = Math.max(0, Math.min(range.end, textLength));
+      return {
+        id: range.id,
+        start: Math.min(start, end),
+        end: Math.max(start, end),
+        member: castById.get(range.cast_id),
+      };
+    })
+    .filter((range) => range.end > range.start)
+    .sort((first, second) => first.start - second.start);
+
+  const segments: VoiceHighlightSegment[] = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.start > cursor) {
+      segments.push({
+        key: `plain-${cursor}-${range.start}`,
+        text: codePointSlice(paragraph.text, cursor, range.start),
+        castName: null,
+        color: null,
+      });
+    }
+    const highlightStart = Math.max(cursor, range.start);
+    if (range.end > highlightStart) {
+      segments.push({
+        key: `voice-${range.id}-${highlightStart}-${range.end}`,
+        text: codePointSlice(paragraph.text, highlightStart, range.end),
+        castName: range.member?.name ?? "Unknown voice",
+        color: range.member?.color ?? "#8a8a8a",
+      });
+      cursor = range.end;
+    }
+  }
+  if (cursor < textLength) {
+    segments.push({
+      key: `plain-${cursor}-${textLength}`,
+      text: codePointSlice(paragraph.text, cursor),
+      castName: null,
+      color: null,
+    });
+  }
+  return segments;
+}
+
+function ParagraphInspector({
+  paragraph,
+  cast,
+  enabled,
+  savedVoiceStyles,
+  tags,
+  selectedRange,
+  selectedCastId,
+  customTag,
+  onAssignToCast,
+  onAssignToStyle,
+  onInsertTag,
+  onCustomTagChange,
+}: {
+  paragraph: Paragraph;
+  cast: CastMember[];
+  enabled: boolean;
+  savedVoiceStyles: VoiceStyle[];
+  tags: string[];
+  selectedRange: TextSelectionRange | null;
+  selectedCastId: string;
+  customTag: string;
+  onAssignToCast: (castId: string) => void;
+  onAssignToStyle: (style: VoiceStyle) => void;
+  onInsertTag: (tag: string) => void;
+  onCustomTagChange: (value: string) => void;
+}) {
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const activeRange =
+    selectedRange?.paragraphId === paragraph.id ? selectedRange : null;
+  const activeSelection =
+    activeRange && activeRange.start !== activeRange.end ? activeRange : null;
+  const activeCursor =
+    activeRange && activeRange.start === activeRange.end ? activeRange : null;
+  const selectedCharacterCount = activeSelection
+    ? Math.abs(activeSelection.end - activeSelection.start)
+    : 0;
+  const tagQuery = customTag
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .trim()
+    .toLowerCase();
+  const filteredTags = (
+    tagQuery ? tags.filter((tag) => tag.toLowerCase().includes(tagQuery)) : tags
+  ).slice(0, 7);
+  const normalizedCustomTag = normalizeTag(customTag);
+  const customTagMatchesKnown = tags.some(
+    (tag) => tag.toLowerCase() === normalizedCustomTag.toLowerCase(),
+  );
+  const castStyleIds = new Set(cast.map((member) => member.style_id));
+  const savedVoiceChoices = savedVoiceStyles.filter(
+    (style) => !castStyleIds.has(style.id),
+  );
+  const hasVoiceChoices = cast.length > 0 || savedVoiceChoices.length > 0;
+
+  useEffect(() => {
+    if (!activeCursor) {
+      setTagPickerOpen(false);
+      onCustomTagChange("");
+    }
+  }, [activeCursor, onCustomTagChange]);
+
+  function openTagPicker(): void {
+    onCustomTagChange("");
+    setTagPickerOpen(true);
+  }
+
+  function insertTagAndClose(tag: string): void {
+    onInsertTag(tag);
+    onCustomTagChange("");
+    setTagPickerOpen(false);
+  }
+
+  return (
+    <section
+      className={
+        enabled ? "paragraph-inspector" : "paragraph-inspector is-disabled"
+      }
+      aria-label="Chatterbox Turbo paragraph inspector"
+    >
+      <p className="annotation-hint">Default narrator remains plain.</p>
+      {enabled ? (
+        <>
+          {activeSelection && (
+            <div className="voice-assignment-panel">
+              <div className="selection-summary">
+                <span>{selectedCharacterCount} chars selected</span>
+                <strong>Available voices</strong>
+              </div>
+              {hasVoiceChoices ? (
+                <div
+                  className="voice-choice-list"
+                  aria-label="Available character voices"
+                >
+                  {cast.map((member) => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      className={
+                        member.id === selectedCastId
+                          ? "voice-choice is-selected"
+                          : "voice-choice"
+                      }
+                      data-cast-id={member.id}
+                      onClick={() => onAssignToCast(member.id)}
+                    >
+                      <span
+                        className="cast-swatch"
+                        style={{ backgroundColor: member.color }}
+                        aria-hidden="true"
+                      />
+                      <span>{member.name}</span>
+                    </button>
+                  ))}
+                  {savedVoiceChoices.map((style) => (
+                    <button
+                      key={style.id}
+                      type="button"
+                      className="voice-choice"
+                      data-style-id={style.id}
+                      onClick={() => onAssignToStyle(style)}
+                    >
+                      <span
+                        className="cast-swatch"
+                        style={{ backgroundColor: "#55a7a2" }}
+                        aria-hidden="true"
+                      />
+                      <span>{style.name}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="annotation-hint">
+                  Import character voices to assign selected text.
+                </p>
+              )}
+            </div>
+          )}
+          {activeCursor && (
+            <div className="tag-insert-panel">
+              {!tagPickerOpen ? (
+                <button
+                  type="button"
+                  className="tag-insert-trigger"
+                  onClick={openTagPicker}
+                >
+                  <Sparkles size={15} />
+                  <span>Insert tag</span>
+                </button>
+              ) : (
+                <div className="tag-autocomplete">
+                  <label className="custom-tag-field">
+                    <span>Tag name</span>
+                    <input
+                      value={customTag}
+                      placeholder="[whisper] or custom"
+                      onChange={(event) =>
+                        onCustomTagChange(event.currentTarget.value)
+                      }
+                    />
+                  </label>
+                  <div
+                    className="tag-suggestion-list"
+                    aria-label="Tag suggestions"
+                  >
+                    {filteredTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className="tag-chip"
+                        onClick={() => insertTagAndClose(tag)}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                    {normalizedCustomTag && !customTagMatchesKnown && (
+                      <button
+                        type="button"
+                        className="tag-chip is-custom"
+                        onClick={() => insertTagAndClose(normalizedCustomTag)}
+                      >
+                        Use custom {normalizedCustomTag}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="annotation-hint">
+          Switch narration source to Chatterbox Turbo to assign character voices
+          and insert tags.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -2119,16 +2848,6 @@ function formatParagraphNumber(index: number): string {
   return String(index + 1).padStart(3, "0");
 }
 
-function formatEngineName(engine?: EngineName): string {
-  if (!engine) {
-    return "Kokoro";
-  }
-  return engine
-    .split("_")
-    .map((part) => titleCase(part))
-    .join(" ");
-}
-
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -2318,7 +3037,7 @@ function normalizeStyleDraft(
   draft: StyleOverride,
   capabilities: TTSCapabilities | null,
 ): StyleOverride {
-  const engine = draft.engine ?? "kokoro";
+  const engine = draft.engine ?? defaultTtsModel;
   const engineCapabilities = capabilityForEngine(capabilities, engine);
   if (!engineCapabilities) {
     return { ...draft, engine };
@@ -2342,14 +3061,45 @@ function normalizeStyleDraft(
     engine,
     language,
     voice,
+    prompt_prefix: "",
   };
+}
+
+function ensureAvailableStyleDraft(
+  draft: StyleOverride,
+  styles: VoiceStyle[],
+): StyleOverride {
+  if (styles.some((style) => style.id === draft.style_id)) {
+    return draft;
+  }
+  return {
+    ...draft,
+    style_id: fallbackStyleIdForDraft(draft, styles),
+  };
+}
+
+function fallbackStyleIdForDraft(
+  draft: StyleOverride,
+  styles: VoiceStyle[],
+): string {
+  const preferredStyleId =
+    defaultStyleIdByEngine[draft.engine ?? defaultTtsModel] ??
+    defaultStyleDraft.style_id;
+  if (styles.some((style) => style.id === preferredStyleId)) {
+    return preferredStyleId;
+  }
+  if (styles.some((style) => style.id === defaultStyleDraft.style_id)) {
+    return defaultStyleDraft.style_id;
+  }
+  return styles[0]?.id ?? defaultStyleDraft.style_id;
 }
 
 function settingsForEngine(
   engine: EngineName | undefined,
 ): EngineSettingsConfig {
   return (
-    engineSettingsByModel[engine ?? "kokoro"] ?? engineSettingsByModel.kokoro!
+    engineSettingsByModel[engine ?? defaultTtsModel] ??
+    engineSettingsByModel[defaultTtsModel]!
   );
 }
 
@@ -2360,7 +3110,12 @@ function capabilityForEngine(
   if (!capabilities) {
     return null;
   }
-  return capabilities[engine ?? "kokoro"] ?? capabilities.kokoro ?? null;
+  return (
+    capabilities[engine ?? defaultTtsModel] ??
+    capabilities[defaultTtsModel] ??
+    capabilities.kokoro ??
+    null
+  );
 }
 
 function voiceOptionsForLanguage(
@@ -2390,6 +3145,7 @@ function chapterEditSnapshot(chapter: Chapter): ChapterEditSnapshot {
       id: paragraph.id,
       text: paragraph.text,
       included: paragraph.included,
+      voice_ranges: paragraph.voice_ranges,
     })),
   };
 }
@@ -2412,6 +3168,7 @@ function restoreChapterEditSnapshot(
             ...paragraph,
             text: paragraphSnapshot.text,
             included: paragraphSnapshot.included,
+            voice_ranges: paragraphSnapshot.voice_ranges,
           }
         : paragraph;
     }),
@@ -2435,9 +3192,197 @@ function chapterSnapshotEquals(
     return (
       paragraph.id === comparison.id &&
       paragraph.text === comparison.text &&
-      paragraph.included === comparison.included
+      paragraph.included === comparison.included &&
+      JSON.stringify(paragraph.voice_ranges) ===
+        JSON.stringify(comparison.voice_ranges)
     );
   });
+}
+
+function characterNameFromFilename(filename: string): string {
+  return filename
+    .replace(/\.[^.]+$/, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeTag(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.startsWith("[") && trimmed.endsWith("]")
+    ? trimmed
+    : `[${trimmed.replace(/^\[|\]$/g, "")}]`;
+}
+
+function tagInsertionText(
+  text: string,
+  start: number,
+  end: number,
+  tag: string,
+): string {
+  const previousCharacter = start > 0 ? codePointCharAt(text, start - 1) : "";
+  const nextCharacter =
+    end < codePointLength(text) ? codePointCharAt(text, end) : "";
+  const leadingSpace =
+    previousCharacter && !/\s/.test(previousCharacter) ? " " : "";
+  const trailingSpace = nextCharacter && !/\s/.test(nextCharacter) ? " " : "";
+  return `${leadingSpace}${tag}${trailingSpace}`;
+}
+
+function selectionRangeWithinTextarea(
+  textarea: HTMLTextAreaElement,
+): { start: number; end: number } | null {
+  const { selectionStart, selectionEnd, value } = textarea;
+  if (typeof selectionStart !== "number" || typeof selectionEnd !== "number") {
+    return null;
+  }
+  const start = codeUnitOffsetToCodePointOffset(value, selectionStart);
+  const end = codeUnitOffsetToCodePointOffset(value, selectionEnd);
+  return start <= end ? { start, end } : { start: end, end: start };
+}
+
+function assignVoiceRange(
+  ranges: VoiceRange[],
+  start: number,
+  end: number,
+  castId: string,
+): VoiceRange[] {
+  const normalizedStart = Math.min(start, end);
+  const normalizedEnd = Math.max(start, end);
+  return [
+    ...ranges.filter(
+      (range) => range.end <= normalizedStart || range.start >= normalizedEnd,
+    ),
+    {
+      id: crypto.randomUUID(),
+      start: normalizedStart,
+      end: normalizedEnd,
+      cast_id: castId,
+    },
+  ].sort((first, second) => first.start - second.start);
+}
+
+function insertionRangeForParagraph(
+  selection: TextSelectionRange | null,
+  paragraphId: string,
+  fallbackOffset: number,
+): { start: number; end: number } {
+  if (selection?.paragraphId === paragraphId) {
+    return { start: selection.end, end: selection.end };
+  }
+  return { start: fallbackOffset, end: fallbackOffset };
+}
+
+function insertTextAtRange(
+  paragraph: Paragraph,
+  start: number,
+  end: number,
+  insertion: string,
+): Paragraph {
+  const nextText =
+    codePointSlice(paragraph.text, 0, start) +
+    insertion +
+    codePointSlice(paragraph.text, end);
+  return {
+    ...paragraph,
+    text: nextText,
+    voice_ranges: reconcileVoiceRangesAfterTextEdit(
+      paragraph.text,
+      nextText,
+      paragraph.voice_ranges,
+    ),
+  };
+}
+
+function reconcileVoiceRangesAfterTextEdit(
+  previousText: string,
+  nextText: string,
+  ranges: VoiceRange[],
+): VoiceRange[] {
+  if (previousText === nextText || ranges.length === 0) {
+    return ranges;
+  }
+  const previousCharacters = Array.from(previousText);
+  const nextCharacters = Array.from(nextText);
+  let prefix = 0;
+  while (
+    prefix < previousCharacters.length &&
+    prefix < nextCharacters.length &&
+    previousCharacters[prefix] === nextCharacters[prefix]
+  ) {
+    prefix += 1;
+  }
+
+  let suffix = 0;
+  while (
+    suffix < previousCharacters.length - prefix &&
+    suffix < nextCharacters.length - prefix &&
+    previousCharacters[previousCharacters.length - 1 - suffix] ===
+      nextCharacters[nextCharacters.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+
+  const previousEditEnd = previousCharacters.length - suffix;
+  const nextEditEnd = nextCharacters.length - suffix;
+  const delta = nextCharacters.length - previousCharacters.length;
+
+  function mapOffset(offset: number): number {
+    if (offset <= prefix) {
+      return offset;
+    }
+    if (offset >= previousEditEnd) {
+      return offset + delta;
+    }
+    return nextEditEnd;
+  }
+
+  return ranges
+    .map((range) => ({
+      ...range,
+      start: Math.max(
+        0,
+        Math.min(nextCharacters.length, mapOffset(range.start)),
+      ),
+      end: Math.max(0, Math.min(nextCharacters.length, mapOffset(range.end))),
+    }))
+    .filter((range) => range.start < range.end);
+}
+
+function codePointLength(text: string): number {
+  return Array.from(text).length;
+}
+
+function codePointSlice(text: string, start: number, end?: number): string {
+  return Array.from(text).slice(start, end).join("");
+}
+
+function codePointCharAt(text: string, offset: number): string {
+  return Array.from(text)[offset] ?? "";
+}
+
+function codeUnitOffsetToCodePointOffset(
+  text: string,
+  codeUnitOffset: number,
+): number {
+  const normalizedOffset = Math.max(0, Math.min(codeUnitOffset, text.length));
+  let codePointOffset = 0;
+  let codeUnitCursor = 0;
+
+  for (const character of text) {
+    const nextCodeUnitCursor = codeUnitCursor + character.length;
+    if (nextCodeUnitCursor > normalizedOffset) {
+      return codePointOffset;
+    }
+    codePointOffset += 1;
+    codeUnitCursor = nextCodeUnitCursor;
+  }
+
+  return codePointOffset;
 }
 
 function messageFromError(error: unknown): string {

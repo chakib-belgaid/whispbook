@@ -153,6 +153,7 @@ function sampleBook(id: string, title: string): Book {
     final_vtt_url: null,
     final_srt_url: null,
     final_package_url: null,
+    cast: [],
     chapters: [],
   };
 }

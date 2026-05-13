@@ -1,19 +1,30 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import re
 import threading
 import time
 import traceback
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Sequence
 
 from . import ffmpeg
-from .models import Book, Chapter, ChapterJobState, GenerateJob, GenerateRequest, VoiceStyle
+from .models import Book, CastMember, Chapter, ChapterJobState, GenerateJob, GenerateRequest, Paragraph, VoiceRange, VoiceStyle
 from .storage import book_dir, file_url, load_book, load_style, save_book, save_job
 from .subtitles import SubtitleCue as Cue
 from .subtitles import offset_cues, write_srt, write_vtt
 from .text_processing import iter_included_paragraphs
 from .tts import TTSManager
+
+
+paralinguistic_tag_pattern = re.compile(r"\s*\[[A-Za-z][A-Za-z0-9 _-]{0,40}\]")
+
+
+@dataclass(frozen=True)
+class AnnotatedTTSSegment:
+    text: str
+    style: VoiceStyle
 
 
 class JobRunner:
@@ -190,10 +201,17 @@ def render_chapter(
     for paragraph in iter_included_paragraphs(chapter):
         paragraph_count += 1
         wav_path = raw_dir / f"{paragraph.index:04d}.wav"
-        tts.synthesize(paragraph.text, style, wav_path)
+        render_annotated_paragraph(
+            paragraph=paragraph,
+            style=style,
+            cast=book.cast,
+            tts=tts,
+            output_path=wav_path,
+        )
         duration = ffmpeg.run_ffprobe_duration(wav_path)
         sequence_files.append(wav_path)
         subtitle_text = paragraph.original_text if subtitle_source == "original" else paragraph.text
+        subtitle_text = strip_paralinguistic_tags(subtitle_text)
         cues.append(Cue(start=timeline, end=timeline + duration, text=subtitle_text))
         timeline += duration
         if gap_seconds > 0:
@@ -223,6 +241,91 @@ def render_chapter(
         "duration": duration,
         "cues": cues,
     }
+
+
+def render_annotated_paragraph(
+    paragraph: Paragraph,
+    style: VoiceStyle,
+    cast: Sequence[CastMember],
+    tts: TTSManager,
+    output_path: Path,
+) -> None:
+    segments = build_annotated_tts_segments(
+        paragraph,
+        default_style=style,
+        cast=cast,
+        load_style=load_style,
+    )
+    if len(segments) == 1:
+        tts.synthesize(segments[0].text, segments[0].style, output_path)
+        return
+
+    segment_dir = output_path.with_suffix("")
+    segment_dir.mkdir(parents=True, exist_ok=True)
+    segment_files: List[Path] = []
+    for index, segment in enumerate(segments):
+        segment_path = segment_dir / f"voice-segment-{index:04d}.wav"
+        tts.synthesize(segment.text, segment.style, segment_path)
+        segment_files.append(segment_path)
+    ffmpeg.concat_audio(segment_files, output_path)
+
+
+def build_annotated_tts_segments(
+    paragraph: Paragraph,
+    default_style: VoiceStyle,
+    cast: Sequence[CastMember],
+    load_style: Callable[[str], VoiceStyle],
+) -> List[AnnotatedTTSSegment]:
+    text = paragraph.text
+    cast_by_id = {member.id: member for member in cast}
+    if default_style.engine != "chatterbox_turbo" or not paragraph.voice_ranges or not cast_by_id:
+        return [AnnotatedTTSSegment(text=text, style=default_style)]
+
+    errors = validate_voice_ranges(text, paragraph.voice_ranges, set(cast_by_id))
+    if errors:
+        raise ValueError("; ".join(errors))
+
+    segments: List[AnnotatedTTSSegment] = []
+    cursor = 0
+    for voice_range in sorted(paragraph.voice_ranges, key=lambda item: item.start):
+        if voice_range.start > cursor:
+            segments.append(AnnotatedTTSSegment(text=text[cursor : voice_range.start], style=default_style))
+
+        member = cast_by_id[voice_range.cast_id]
+        cast_style = normalize_style_for_engine(load_style(member.style_id))
+        if cast_style.engine != "chatterbox_turbo":
+            raise ValueError(f"Cast member {member.name} must use a Chatterbox Turbo style.")
+        segments.append(AnnotatedTTSSegment(text=text[voice_range.start : voice_range.end], style=cast_style))
+        cursor = voice_range.end
+
+    if cursor < len(text):
+        segments.append(AnnotatedTTSSegment(text=text[cursor:], style=default_style))
+
+    return [segment for segment in segments if segment.text.strip()] or [AnnotatedTTSSegment(text=".", style=default_style)]
+
+
+def validate_voice_ranges(text: str, ranges: Sequence[VoiceRange], cast_ids: set[str]) -> List[str]:
+    errors: List[str] = []
+    previous_end = -1
+    for voice_range in sorted(ranges, key=lambda item: (item.start, item.end)):
+        if voice_range.cast_id not in cast_ids:
+            errors.append(f"Unknown cast member for range {voice_range.id}.")
+        if voice_range.start >= voice_range.end:
+            errors.append(f"Voice range {voice_range.id} must have start before end.")
+        if voice_range.start > len(text):
+            errors.append(f"Voice range {voice_range.id} starts outside the paragraph.")
+        if voice_range.end > len(text):
+            errors.append(f"Voice range {voice_range.id} ends outside the paragraph.")
+        if previous_end > voice_range.start:
+            errors.append(f"Voice range {voice_range.id} overlaps another range.")
+        previous_end = max(previous_end, voice_range.end)
+    return errors
+
+
+def strip_paralinguistic_tags(text: str) -> str:
+    cleaned = paralinguistic_tag_pattern.sub(" ", text)
+    cleaned = re.sub(r"\s+([,.!?;:])", r"\1", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def apply_chapter_result(book: Book, chapter_id: str, result: dict) -> None:
@@ -268,9 +371,9 @@ def engine_style_fields(engine: str) -> List[str]:
     if engine == "kokoro":
         return shared_fields + ["language", "speed"]
     if engine == "chatterbox":
-        return shared_fields + ["language", "exaggeration", "cfg_weight", "temperature", "top_p", "prompt_prefix"]
+        return shared_fields + ["language", "exaggeration", "cfg_weight", "temperature", "top_p"]
     if engine == "chatterbox_turbo":
-        return shared_fields + ["temperature", "top_p", "prompt_prefix"]
+        return shared_fields + ["temperature", "top_p"]
     return ["paragraph_gap_ms", "comma_pause_ms"]
 
 
@@ -288,9 +391,17 @@ def normalize_style_for_engine(style: VoiceStyle) -> VoiceStyle:
             }
         )
     elif engine == "chatterbox":
-        payload["speed"] = 1.0
+        payload.update({"speed": 1.0, "prompt_prefix": ""})
     elif engine == "chatterbox_turbo":
-        payload.update({"language": "en", "speed": 1.0, "exaggeration": 0.5, "cfg_weight": 0.5})
+        payload.update(
+            {
+                "language": "en",
+                "speed": 1.0,
+                "exaggeration": 0.5,
+                "cfg_weight": 0.5,
+                "prompt_prefix": "",
+            }
+        )
     return VoiceStyle.model_validate(payload)
 
 

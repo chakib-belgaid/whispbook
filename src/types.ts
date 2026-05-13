@@ -13,6 +13,21 @@ export interface Paragraph {
   original_text: string;
   text: string;
   included: boolean;
+  voice_ranges: VoiceRange[];
+}
+
+export interface VoiceRange {
+  id: string;
+  start: number;
+  end: number;
+  cast_id: string;
+}
+
+export interface CastMember {
+  id: string;
+  name: string;
+  style_id: string;
+  color: string;
 }
 
 export interface Chapter {
@@ -35,6 +50,7 @@ export interface Book {
   filename: string;
   created_at: number;
   updated_at: number;
+  cast: CastMember[];
   chapters: Chapter[];
   final_audio_url: string | null;
   final_vtt_url: string | null;
@@ -74,6 +90,7 @@ export interface EngineCapabilities {
   engine: EngineName;
   voices: TTSVoiceOption[];
   languages: TTSOption[];
+  paralinguistic_tags: string[];
 }
 
 export type TTSCapabilities = Record<EngineName, EngineCapabilities>;

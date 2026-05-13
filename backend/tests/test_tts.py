@@ -1,7 +1,36 @@
+from pathlib import Path
+
 from app.models import VoiceStyle
 from app.jobs import merge_style
 from app.storage import default_styles
-from app.tts import split_text_for_tts
+from app.tts import BaseEngine, TTSManager, split_text_for_tts
+
+
+class RecordingEngine(BaseEngine):
+    name = "recording"
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def synthesize(self, text: str, style: VoiceStyle, output_path: Path) -> None:
+        self.texts.append(text)
+        output_path.write_bytes(b"fake wav")
+
+
+def stub_audio_pipeline(monkeypatch) -> None:
+    monkeypatch.setattr("app.tts.normalize_in_place", lambda path: None)
+    monkeypatch.setattr(
+        "app.tts.normalize_wav",
+        lambda input_path, output_path: output_path.write_bytes(b"normalized"),
+    )
+    monkeypatch.setattr(
+        "app.tts.make_silence",
+        lambda path, duration_seconds: path.write_bytes(b"silence"),
+    )
+    monkeypatch.setattr(
+        "app.tts.concat_audio",
+        lambda files, output_path: output_path.write_bytes(b"concat"),
+    )
 
 
 def test_split_text_for_tts_inserts_comma_pauses():
@@ -36,6 +65,92 @@ def test_split_text_for_tts_pauses_after_commas_before_closing_quotes():
         ("", 220),
         ("\u201clisten.\u201d", 0),
     ]
+
+
+def test_chatterbox_ignores_artificial_punctuation_pauses(monkeypatch, tmp_path):
+    stub_audio_pipeline(monkeypatch)
+    engine = RecordingEngine()
+    manager = TTSManager()
+    manager.engines["chatterbox"] = engine
+    style = VoiceStyle(
+        id="chatter",
+        name="Chatterbox",
+        engine="chatterbox",
+        voice="reference",
+        language="en",
+        comma_pause_ms=240,
+    )
+
+    manager.synthesize("Wait, listen. Then answer.", style, tmp_path / "out.wav")
+
+    assert engine.texts == ["Wait, listen. Then answer."]
+
+
+def test_chatterbox_turbo_ignores_artificial_punctuation_pauses(monkeypatch, tmp_path):
+    stub_audio_pipeline(monkeypatch)
+    engine = RecordingEngine()
+    manager = TTSManager()
+    manager.engines["chatterbox_turbo"] = engine
+    style = VoiceStyle(
+        id="turbo",
+        name="Chatterbox Turbo",
+        engine="chatterbox_turbo",
+        voice="reference",
+        language="en",
+        comma_pause_ms=240,
+    )
+
+    manager.synthesize("Wait, listen. Then answer.", style, tmp_path / "out.wav")
+
+    assert engine.texts == ["Wait, listen. Then answer."]
+
+
+def test_chatterbox_engines_do_not_prefix_narration_guidance(monkeypatch, tmp_path):
+    stub_audio_pipeline(monkeypatch)
+    manager = TTSManager()
+    engines = {
+        "chatterbox": RecordingEngine(),
+        "chatterbox_turbo": RecordingEngine(),
+    }
+    manager.engines.update(engines)
+
+    for engine_name, engine in engines.items():
+        style = VoiceStyle(
+            id=engine_name,
+            name=engine_name,
+            engine=engine_name,
+            voice="reference",
+            language="en",
+            prompt_prefix="[hushed] ",
+        )
+
+        manager.synthesize("Read this line.", style, tmp_path / f"{engine_name}.wav")
+
+        assert engine.texts == ["Read this line."]
+
+
+def test_merge_style_clears_prompt_for_chatterbox_engines():
+    for engine in ["chatterbox", "chatterbox_turbo"]:
+        base = VoiceStyle(
+            id=engine,
+            name=engine,
+            engine=engine,
+            voice="reference",
+            language="en",
+            prompt_prefix="[deep breath] ",
+        )
+        override = type(
+            "Override",
+            (),
+            {
+                "engine": engine,
+                "prompt_prefix": "[calm] ",
+            },
+        )()
+
+        style = merge_style(base, override)
+
+        assert style.prompt_prefix == ""
 
 
 def test_merge_style_clears_chatterbox_prompt_when_switching_to_kokoro():
@@ -80,3 +195,14 @@ def test_fantasy_style_uses_kokoro_george_voice():
     assert fantasy.language == "b"
     assert fantasy.speed == 0.91
     assert fantasy.prompt_prefix == ""
+
+
+def test_default_styles_include_chatterbox_builtin_presets():
+    styles = default_styles()
+
+    assert styles["chatterbox-default"].engine == "chatterbox"
+    assert styles["chatterbox-default"].voice == "default"
+    assert styles["chatterbox-default"].reference_audio_path is None
+    assert styles["chatterbox-turbo-default"].engine == "chatterbox_turbo"
+    assert styles["chatterbox-turbo-default"].voice == "default"
+    assert styles["chatterbox-turbo-default"].reference_audio_path is None

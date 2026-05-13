@@ -52,11 +52,17 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --all-groups --frozen
+
       - name: Lint backend
-        run: uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
+        working-directory: backend
+        run: uv run --frozen ruff check app tests
 
       - name: Run backend tests
-        run: uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests
+        working-directory: backend
+        run: uv run --frozen pytest tests
 
       - name: Build backend image
         run: docker build -t whispbook-api:${{ github.sha }} backend

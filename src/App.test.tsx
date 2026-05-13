@@ -106,12 +106,12 @@ describe("App review fixes", () => {
     );
   });
 
-  it("updates Chatterbox Turbo voice and prompt controls without reusing a stale event target", async () => {
+  it("updates Chatterbox Turbo voice controls without reusing a stale event target", async () => {
     const { container } = await renderApp();
 
     const engineSelect = controlByLabel<HTMLSelectElement>(
       container,
-      "Narration source",
+      "TTS model",
     );
     engineSelect.value = "chatterbox_turbo";
     await act(async () => {
@@ -127,17 +127,19 @@ describe("App review fixes", () => {
       voiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    const promptPrefix = controlByLabel<HTMLTextAreaElement>(
-      container,
-      "Narration guidance",
-    );
-    promptPrefix.value = "[hushed] ";
-    await act(async () => {
-      promptPrefix.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
     expect(voiceSelect.value).toBe("reference");
-    expect(promptPrefix.value).toBe("[hushed] ");
+    expect(container.textContent).not.toContain("Narration guidance");
+  });
+
+  it("defaults fresh audiobook settings to Chatterbox Turbo", async () => {
+    const { container } = await renderApp();
+
+    expect(
+      controlByLabel<HTMLSelectElement>(container, "TTS model").value,
+    ).toBe("chatterbox_turbo");
+    expect(currentTtsModelLayout(container).dataset.engine).toBe(
+      "chatterbox_turbo",
+    );
   });
 
   it("restores the last used voice configuration instead of booting into a preset", async () => {
@@ -159,15 +161,12 @@ describe("App review fixes", () => {
     const { container } = await renderApp();
 
     expect(
-      controlByLabel<HTMLSelectElement>(container, "Narration source").value,
+      controlByLabel<HTMLSelectElement>(container, "TTS model").value,
     ).toBe("chatterbox_turbo");
     expect(controlByLabel<HTMLSelectElement>(container, "Narrator").value).toBe(
       "reference",
     );
-    expect(
-      controlByLabel<HTMLTextAreaElement>(container, "Narration guidance")
-        .value,
-    ).toBe("[calm] ");
+    expect(container.textContent).not.toContain("Narration guidance");
   });
 
   it("uses clear audiobook settings labels instead of fantasy config terms", async () => {
@@ -180,54 +179,186 @@ describe("App review fixes", () => {
       container.querySelector('[aria-label="Open audiobook settings"]'),
     ).not.toBeNull();
     expect(container.textContent).toContain("Audiobook");
-    expect(container.textContent).toContain("Voice presets");
+    expect(container.textContent).toContain("TTS model");
+    expect(container.textContent).toContain("Saved voices");
     expect(container.textContent).toContain("Current settings");
     expect(container.textContent).toContain("Voice fine-tuning");
     expect(container.textContent).toContain("Output");
     expect(container.textContent).toContain("Create audiobook");
 
+    expect(container.textContent).not.toContain("Voice:");
     expect(container.textContent).not.toContain("Spellbook");
     expect(container.textContent).not.toContain("Ritual Runes");
     expect(container.textContent).not.toContain("Opening incantation");
     expect(container.textContent).not.toContain("voice charm");
   });
 
-  it("keeps built-in voice presets selectable and allows returning to current settings", async () => {
+  it("renders a specific settings layout for each TTS model", async () => {
+    const { container } = await renderApp();
+
+    let layout = currentTtsModelLayout(container);
+    expect(layout.dataset.engine).toBe("chatterbox_turbo");
+    expect(layout.textContent).toContain("Turbo narrator");
+    expect(layout.textContent).not.toContain("Narration guidance");
+    expect(layout.textContent).toContain("Voice variation");
+    expect(layout.textContent).toContain("Import character voices");
+    expect(layout.textContent).not.toContain("Language");
+
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox");
+    });
+    layout = currentTtsModelLayout(container);
+    expect(layout.dataset.engine).toBe("chatterbox");
+    expect(layout.textContent).toContain("Chatterbox narrator");
+    expect(layout.textContent).toContain("Language");
+    expect(layout.textContent).toContain("Expressiveness");
+    expect(layout.textContent).toContain("Voice consistency");
+    expect(layout.textContent).not.toContain("Narration guidance");
+    expect(layout.textContent).not.toContain("Import character voices");
+
+    await act(async () => {
+      selectNarrationEngine(container, "kokoro");
+    });
+    layout = currentTtsModelLayout(container);
+    expect(layout.dataset.engine).toBe("kokoro");
+    expect(layout.textContent).toContain("Kokoro narrator");
+    expect(layout.textContent).toContain("Reading pace");
+    expect(layout.textContent).toContain("Comma pause");
+    expect(layout.textContent).not.toContain("Narration guidance");
+  });
+
+  it("lists saved storage voices without mixing in built-in presets", async () => {
     apiMock.getStyles.mockResolvedValue([
       sampleStyle({ id: "fantasy", name: "Fantasy", custom: false }),
       sampleStyle({
-        id: "sci-fi",
-        name: "Sci-fi",
+        id: "chatterbox-turbo-default",
+        name: "Chatterbox Turbo default",
         custom: false,
-        voice: "am_adam",
-        language: "a",
-        speed: 1.08,
+        engine: "chatterbox_turbo",
+        voice: "default",
+        language: "en",
+      }),
+      sampleStyle({
+        id: "tom-sawyer",
+        name: "Tom Sawyer",
+        custom: true,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
       }),
     ]);
     const { container } = await renderApp();
 
-    const presetSelect = controlByLabel<HTMLSelectElement>(
+    const savedVoiceSelect = controlByLabel<HTMLSelectElement>(
       container,
-      "Saved voice preset",
+      "Saved voice",
     );
 
     expect(
-      Array.from(presetSelect.options).map((option) => option.value),
-    ).toEqual(["", "fantasy", "sci-fi"]);
+      Array.from(savedVoiceSelect.options).map((option) => option.value),
+    ).toEqual(["", "tom-sawyer"]);
+    expect(savedVoiceSelect.textContent).not.toContain("Fantasy");
 
-    presetSelect.value = "fantasy";
+    savedVoiceSelect.value = "tom-sawyer";
     await act(async () => {
-      presetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    expect(presetSelect.value).toBe("fantasy");
+    expect(savedVoiceSelect.value).toBe("tom-sawyer");
 
-    presetSelect.value = "";
+    savedVoiceSelect.value = "";
     await act(async () => {
-      presetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    expect(presetSelect.value).toBe("");
+    expect(savedVoiceSelect.value).toBe("");
+  });
+
+  it("uses an available base style after switching saved voices back to current settings", async () => {
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ id: "neutral", name: "Neutral", custom: false }),
+      sampleStyle({
+        id: "chatterbox-turbo-default",
+        name: "Chatterbox Turbo default",
+        custom: false,
+        engine: "chatterbox_turbo",
+        voice: "default",
+        language: "en",
+      }),
+      sampleStyle({
+        id: "custom-turbo",
+        name: "Custom Turbo",
+        custom: true,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+      }),
+    ]);
+    const { container } = await renderApp();
+    const savedVoiceSelect = controlByLabel<HTMLSelectElement>(
+      container,
+      "Saved voice",
+    );
+
+    savedVoiceSelect.value = "custom-turbo";
+    await act(async () => {
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    savedVoiceSelect.value = "";
+    await act(async () => {
+      savedVoiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      buttonByText(container, "Listen to sample").click();
+    });
+
+    expect(apiMock.createPreview).toHaveBeenCalledWith(
+      "existing",
+      "Existing paragraph",
+      expect.objectContaining({ style_id: "chatterbox-turbo-default" }),
+      "Existing paragraph",
+      expect.any(Array),
+      expect.any(Array),
+    );
+  });
+
+  it("replaces a stale stored style id before creating a preview", async () => {
+    window.localStorage.setItem(
+      "whispbook.styleDraft",
+      JSON.stringify({
+        style_id: "missing-custom-style",
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+        temperature: 0.72,
+        top_p: 0.93,
+      }),
+    );
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ id: "neutral", name: "Neutral", custom: false }),
+      sampleStyle({
+        id: "chatterbox-turbo-default",
+        name: "Chatterbox Turbo default",
+        custom: false,
+        engine: "chatterbox_turbo",
+        voice: "default",
+        language: "en",
+      }),
+    ]);
+    const { container } = await renderApp();
+
+    await act(async () => {
+      buttonByText(container, "Listen to sample").click();
+    });
+
+    expect(apiMock.createPreview).toHaveBeenCalledWith(
+      "existing",
+      "Existing paragraph",
+      expect.objectContaining({ style_id: "chatterbox-turbo-default" }),
+      "Existing paragraph",
+      expect.any(Array),
+      expect.any(Array),
+    );
   });
 
   it("keeps fine-tuning drawers collapsed by default", async () => {
@@ -235,8 +366,27 @@ describe("App review fixes", () => {
 
     const fineTuning = detailsBySummary(container, "Voice fine-tuning");
     expect(fineTuning.open).toBe(false);
-    expect(fineTuning.textContent).toContain("Reading pace");
+    expect(fineTuning.textContent).toContain("Voice variation");
     expect(fineTuning.textContent).toContain("Pause between paragraphs");
+  });
+
+  it("hides comma pause settings for Chatterbox engines", async () => {
+    const { container } = await renderApp();
+
+    await act(async () => {
+      selectNarrationEngine(container, "kokoro");
+    });
+    expect(container.textContent).toContain("Comma pause");
+
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox");
+    });
+    expect(container.textContent).not.toContain("Comma pause");
+
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+    expect(container.textContent).not.toContain("Comma pause");
   });
 
   it("renders sample playback with themed controls instead of native browser audio chrome", async () => {
@@ -338,6 +488,221 @@ describe("App review fixes", () => {
     );
   });
 
+  it("imports multiple Chatterbox Turbo character voices into the active cast", async () => {
+    apiMock.createCustomStyle.mockImplementation(async (input) =>
+      sampleStyle({
+        custom: true,
+        id: `${input.name.toLowerCase().replace(/\s+/g, "-")}-style`,
+        name: input.name,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+      }),
+    );
+    const { container } = await renderApp();
+    selectNarrationEngine(container, "chatterbox_turbo");
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Import character voice files"]',
+    );
+    expect(input).not.toBeNull();
+
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [
+        new File(["alice"], "alice-wonder.wav", { type: "audio/wav" }),
+        new File(["bob"], "bob-stone.wav", { type: "audio/wav" }),
+      ],
+    });
+
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(apiMock.createCustomStyle).toHaveBeenCalledTimes(2);
+    expect(apiMock.createCustomStyle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "alice wonder",
+        engine: "chatterbox_turbo",
+        referenceAudio: expect.any(File),
+      }),
+    );
+    expect(container.textContent).toContain("alice wonder");
+    expect(container.textContent).toContain("bob stone");
+  });
+
+  it("inserts Turbo paralinguistic tags from a cursor autocomplete", async () => {
+    const { container } = await renderApp();
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+    const editor = activeParagraphEditor(container);
+    await act(async () => {
+      placeCursorInTextarea(editor, "Existing".length);
+    });
+
+    await act(async () => {
+      buttonByText(container, "Insert tag").click();
+    });
+    const tagInput = controlByLabel<HTMLInputElement>(container, "Tag name");
+    await act(async () => {
+      changeInputValue(tagInput, "whi");
+    });
+    await act(async () => {
+      buttonByText(container, "[whisper]").click();
+    });
+
+    expect(activeParagraphText(container)).toBe("Existing [whisper] paragraph");
+  });
+
+  it("inserts custom tags from the cursor autocomplete", async () => {
+    const { container } = await renderApp();
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+    const editor = activeParagraphEditor(container);
+    await act(async () => {
+      placeCursorInTextarea(editor, "Existing".length);
+    });
+
+    await act(async () => {
+      buttonByText(container, "Insert tag").click();
+    });
+    const tagInput = controlByLabel<HTMLInputElement>(container, "Tag name");
+    await act(async () => {
+      changeInputValue(tagInput, "hushed aside");
+    });
+    await act(async () => {
+      buttonByText(container, "Use custom [hushed aside]").click();
+    });
+
+    expect(activeParagraphText(container)).toBe(
+      "Existing [hushed aside] paragraph",
+    );
+  });
+
+  it("assigns selected original text to a cast voice from an available voice list", async () => {
+    const { container } = await renderApp();
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+    expect(
+      container.querySelector('[data-testid="paragraph-annotation-preview"]'),
+    ).toBeNull();
+
+    await act(async () => {
+      selectTextInTextarea(
+        activeParagraphEditor(container),
+        0,
+        "Existing".length,
+      );
+    });
+    const voiceList = container.querySelector<HTMLElement>(
+      '[aria-label="Available character voices"]',
+    );
+    expect(voiceList).not.toBeNull();
+
+    await act(async () => {
+      voiceList
+        ?.querySelector<HTMLButtonElement>('[data-cast-id="existing-alice"]')
+        ?.click();
+    });
+
+    expect(
+      container.querySelector('[aria-label="Available character voices"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Assigned voice ranges"]'),
+    ).toBeNull();
+    const highlight = container.querySelector<HTMLElement>(
+      '[data-testid="voice-range-highlight"]',
+    );
+    expect(highlight?.dataset.castName).toBe("Alice");
+    expect(highlight?.textContent).toBe("Existing");
+    expect(container.textContent).not.toContain("Alice: Existing");
+    expect(container.textContent).toContain("Default narrator remains plain");
+  });
+
+  it("saves highlighted voice ranges as code-point offsets", async () => {
+    const book = sampleBook("emoji", "Emoji", "emoji.md");
+    book.chapters[0].paragraphs[0].original_text = "😀 Alice paragraph";
+    book.chapters[0].paragraphs[0].text = "😀 Alice paragraph";
+    apiMock.getBooks.mockResolvedValue([book]);
+    const { container } = await renderApp();
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+
+    const editor = activeParagraphEditor(container);
+    const start = editor.value.indexOf("Alice");
+    await act(async () => {
+      selectTextInTextarea(editor, start, start + "Alice".length);
+    });
+    const voiceList = container.querySelector<HTMLElement>(
+      '[aria-label="Available character voices"]',
+    );
+
+    await act(async () => {
+      voiceList
+        ?.querySelector<HTMLButtonElement>('[data-cast-id="emoji-alice"]')
+        ?.click();
+    });
+    await act(async () => {
+      buttonByText(container, "Save Edits").click();
+    });
+
+    const saved = apiMock.saveBook.mock.calls.at(-1)?.[0] as Book;
+    expect(saved.chapters[0].paragraphs[0].voice_ranges[0]).toMatchObject({
+      start: 2,
+      end: 7,
+      cast_id: "emoji-alice",
+    });
+  });
+
+  it("shows saved storage voices when assigning selected text", async () => {
+    const book = sampleBook("storage-voices", "Storage Voices", "voices.md");
+    book.cast = [];
+    apiMock.getBooks.mockResolvedValue([book]);
+    apiMock.getStyles.mockResolvedValue([
+      sampleStyle({ id: "fantasy", name: "Fantasy", custom: false }),
+      sampleStyle({
+        id: "tom-sawyer",
+        name: "Tom Sawyer",
+        custom: true,
+        engine: "chatterbox_turbo",
+        voice: "reference",
+        language: "en",
+      }),
+    ]);
+    const { container } = await renderApp();
+
+    await act(async () => {
+      selectTextInTextarea(
+        activeParagraphEditor(container),
+        0,
+        "Storage".length,
+      );
+    });
+    const voiceList = container.querySelector<HTMLElement>(
+      '[aria-label="Available character voices"]',
+    );
+
+    expect(voiceList?.textContent).toContain("Tom Sawyer");
+    expect(voiceList?.textContent).not.toContain("Fantasy");
+
+    await act(async () => {
+      voiceList
+        ?.querySelector<HTMLButtonElement>('[data-style-id="tom-sawyer"]')
+        ?.click();
+    });
+
+    const highlight = container.querySelector<HTMLElement>(
+      '[data-testid="voice-range-highlight"]',
+    );
+    expect(highlight?.dataset.castName).toBe("Tom Sawyer");
+    expect(highlight?.textContent).toBe("Storage");
+    expect(container.textContent).not.toContain("Tom Sawyer: Storage");
+  });
+
   async function renderApp(): Promise<{ container: HTMLDivElement }> {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -353,9 +718,17 @@ describe("App review fixes", () => {
 });
 
 function activeParagraphText(container: ParentNode): string | undefined {
-  return container.querySelector<HTMLTextAreaElement>(
+  return activeParagraphEditor(container).value;
+}
+
+function activeParagraphEditor(container: ParentNode): HTMLTextAreaElement {
+  const editor = container.querySelector<HTMLTextAreaElement>(
     ".markdown-paragraph-editor",
-  )?.value;
+  );
+  if (!editor) {
+    throw new Error("Could not find active paragraph editor");
+  }
+  return editor;
 }
 
 function paragraphSelectors(container: ParentNode): HTMLElement[] {
@@ -417,6 +790,42 @@ function changeInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function placeCursorInTextarea(
+  textarea: HTMLTextAreaElement,
+  offset: number,
+): void {
+  selectTextInTextarea(textarea, offset, offset);
+}
+
+function selectTextInTextarea(
+  textarea: HTMLTextAreaElement,
+  start: number,
+  end: number,
+): void {
+  textarea.focus();
+  textarea.setSelectionRange(start, end);
+  textarea.dispatchEvent(new Event("select", { bubbles: true }));
+}
+
+function selectNarrationEngine(container: ParentNode, engine: string): void {
+  const engineSelect = controlByLabel<HTMLSelectElement>(
+    container,
+    "TTS model",
+  );
+  engineSelect.value = engine;
+  engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function currentTtsModelLayout(container: ParentNode): HTMLElement {
+  const layout = container.querySelector<HTMLElement>(
+    '[data-testid="tts-model-layout"]',
+  );
+  if (!layout) {
+    throw new Error("Could not find TTS model layout");
+  }
+  return layout;
+}
+
 function sampleBook(id: string, title: string, filename: string): Book {
   return {
     id,
@@ -428,6 +837,14 @@ function sampleBook(id: string, title: string, filename: string): Book {
     final_vtt_url: null,
     final_srt_url: null,
     final_package_url: null,
+    cast: [
+      {
+        id: `${id}-alice`,
+        name: "Alice",
+        style_id: "alice-style",
+        color: "#5f9ed1",
+      },
+    ],
     chapters: [
       {
         id: `${id}-chapter-1`,
@@ -447,6 +864,7 @@ function sampleBook(id: string, title: string, filename: string): Book {
             original_text: `${title} paragraph`,
             text: `${title} paragraph`,
             included: true,
+            voice_ranges: [],
           },
           {
             id: `${id}-paragraph-2`,
@@ -454,6 +872,7 @@ function sampleBook(id: string, title: string, filename: string): Book {
             original_text: `${title} second paragraph`,
             text: `${title} second paragraph`,
             included: true,
+            voice_ranges: [],
           },
         ],
       },
@@ -497,6 +916,7 @@ function sampleCapabilities(): TTSCapabilities {
     engine: "kokoro",
     voices: [{ value: "bm_george", label: "George", language: "b" }],
     languages: [{ value: "b", label: "British English" }],
+    paralinguistic_tags: [],
   };
   const chatterbox: EngineCapabilities = {
     engine: "chatterbox",
@@ -505,12 +925,25 @@ function sampleCapabilities(): TTSCapabilities {
       { value: "reference", label: "Custom reference audio", language: "en" },
     ],
     languages: [{ value: "en", label: "English" }],
+    paralinguistic_tags: [],
   };
 
   return {
     kokoro,
     chatterbox,
-    chatterbox_turbo: { ...chatterbox, engine: "chatterbox_turbo" },
+    chatterbox_turbo: {
+      ...chatterbox,
+      engine: "chatterbox_turbo",
+      paralinguistic_tags: [
+        "[laugh]",
+        "[chuckle]",
+        "[cough]",
+        "[sigh]",
+        "[gasp]",
+        "[whisper]",
+        "[breath]",
+      ],
+    },
     mock: { ...chatterbox, engine: "mock" },
   };
 }

@@ -11,7 +11,17 @@ from typing import Dict, List
 from .models import Book, GenerateJob, VoiceStyle
 
 
-storage_root = Path(os.environ.get("WHISPBOOK_STORAGE", "storage")).resolve()
+DEFAULT_STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage"
+
+
+def configured_storage_root() -> Path:
+    configured = os.environ.get("WHISPBOOK_STORAGE")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return DEFAULT_STORAGE_ROOT.resolve()
+
+
+storage_root = configured_storage_root()
 books_root = storage_root / "books"
 styles_root = storage_root / "styles"
 previews_root = storage_root / "previews"
@@ -112,11 +122,41 @@ def default_styles() -> Dict[str, VoiceStyle]:
             comma_pause_ms=140,
         ),
         VoiceStyle(
+            id="chatterbox-default",
+            name="Chatterbox default",
+            engine="chatterbox",
+            description="Built-in Chatterbox model voice",
+            voice="default",
+            language="en",
+            speed=1.0,
+            exaggeration=0.5,
+            cfg_weight=0.5,
+            temperature=0.8,
+            top_p=1.0,
+            paragraph_gap_ms=450,
+            comma_pause_ms=160,
+        ),
+        VoiceStyle(
+            id="chatterbox-turbo-default",
+            name="Chatterbox Turbo default",
+            engine="chatterbox_turbo",
+            description="Built-in Chatterbox Turbo model voice",
+            voice="default",
+            language="en",
+            speed=1.0,
+            exaggeration=0.5,
+            cfg_weight=0.5,
+            temperature=0.8,
+            top_p=1.0,
+            paragraph_gap_ms=450,
+            comma_pause_ms=160,
+        ),
+        VoiceStyle(
             id="murder-mystery",
             name="Murder mystery",
             engine="chatterbox",
             description="Tense, restrained, intimate delivery",
-            voice="af_heart",
+            voice="default",
             language="en",
             speed=0.88,
             exaggeration=0.68,

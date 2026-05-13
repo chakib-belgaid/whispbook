@@ -31,8 +31,14 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --all-groups --frozen
+
       - name: Lint backend
-        run: uv run --with ruff --with-requirements backend/requirements.txt ruff check backend/app backend/tests
+        working-directory: backend
+        run: uv run --frozen ruff check app tests
 
       - name: Run backend tests
-        run: uv run --with pytest --with-requirements backend/requirements.txt pytest backend/tests
+        working-directory: backend
+        run: uv run --frozen pytest tests
