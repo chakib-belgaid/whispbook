@@ -120,6 +120,48 @@ def test_job_runner_updates_progress_and_stream_segments_before_final_packaging(
     assert saved_jobs[-1].stream_segments[0].audio_url.endswith("/segments/0000.wav")
 
 
+def test_job_runner_batches_stream_segment_persistence(monkeypatch, tmp_path):
+    stub_generation_audio_pipeline(monkeypatch, tmp_path)
+    book = sample_book(paragraph_count=10)
+    saved_jobs: list[GenerateJob] = []
+
+    monkeypatch.setattr("app.jobs.load_book", lambda book_id: book)
+    monkeypatch.setattr("app.jobs.load_style", lambda style_id: sample_style())
+    monkeypatch.setattr("app.jobs.book_dir", lambda book_id: tmp_path / "books" / book_id)
+    monkeypatch.setattr("app.jobs.save_book", lambda saved_book: saved_book)
+    monkeypatch.setattr(
+        "app.jobs.save_job",
+        lambda job: saved_jobs.append(job.model_copy(deep=True)) or job,
+    )
+
+    runner = JobRunner(FakeTTS())
+    job = GenerateJob(
+        id="job-1",
+        book_id=book.id,
+        status="queued",
+        created_at=1,
+        updated_at=1,
+        message="Queued",
+        progress=0,
+        chapters=[],
+    )
+    runner._remember(job)
+
+    runner._run(
+        job.id,
+        GenerateRequest(
+            chapter_ids=["ch-1"],
+            style=StyleOverride(style_id="neutral"),
+        ),
+    )
+
+    stream_progress_saves = [
+        saved for saved in saved_jobs if saved.message.startswith("Rendering speech (")
+    ]
+    assert len(stream_progress_saves) < len(book.chapters[0].paragraphs)
+    assert len(saved_jobs[-1].stream_segments) == len(book.chapters[0].paragraphs)
+
+
 def stub_generation_audio_pipeline(monkeypatch, tmp_path):
     monkeypatch.setattr("app.jobs.file_url", lambda path: "/media/" + Path(path).relative_to(tmp_path).as_posix())
     monkeypatch.setattr("app.jobs.ffmpeg.make_silence", lambda path, duration: path.write_bytes(b"silence"))
@@ -130,7 +172,7 @@ def stub_generation_audio_pipeline(monkeypatch, tmp_path):
     monkeypatch.setattr("app.jobs.ffmpeg.run_ffprobe_duration", lambda path: 1.25 if Path(path).suffix == ".wav" else 2.5)
 
 
-def sample_book() -> Book:
+def sample_book(paragraph_count: int = 2) -> Book:
     return Book(
         id="book-1",
         title="Streaming Book",
@@ -143,21 +185,25 @@ def sample_book() -> Book:
                 index=0,
                 title="Chapter One",
                 paragraphs=[
-                    Paragraph(
-                        id="p-1",
-                        index=0,
-                        original_text="First paragraph.",
-                        text="First paragraph.",
-                    ),
-                    Paragraph(
-                        id="p-2",
-                        index=1,
-                        original_text="Second paragraph.",
-                        text="Second paragraph.",
-                    ),
+                    sample_paragraph(index) for index in range(paragraph_count)
                 ],
             )
         ],
+    )
+
+
+def sample_paragraph(index: int) -> Paragraph:
+    if index == 0:
+        text = "First paragraph."
+    elif index == 1:
+        text = "Second paragraph."
+    else:
+        text = f"Paragraph {index + 1}."
+    return Paragraph(
+        id=f"p-{index + 1}",
+        index=index,
+        original_text=text,
+        text=text,
     )
 
 

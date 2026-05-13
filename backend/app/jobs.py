@@ -30,6 +30,8 @@ from .tts import TTSManager
 
 
 paralinguistic_tag_pattern = re.compile(r"\s*\[[A-Za-z][A-Za-z0-9 _-]{0,40}\]")
+STREAM_PROGRESS_SAVE_PARAGRAPH_INTERVAL = 8
+STREAM_PROGRESS_SAVE_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,8 @@ class JobRunner:
         total_paragraphs = count_generation_paragraphs(book, selected_ids)
         completed_paragraphs = 0
         stream_sequence = 0
+        unsaved_stream_segments = 0
+        last_stream_save_at = time.monotonic()
 
         def next_stream_sequence() -> int:
             nonlocal stream_sequence
@@ -103,13 +107,28 @@ class JobRunner:
             stream_sequence += 1
             return sequence
 
+        def should_persist_stream_update() -> bool:
+            nonlocal last_stream_save_at, unsaved_stream_segments
+            unsaved_stream_segments += 1
+            now = time.monotonic()
+            should_persist = (
+                completed_paragraphs == 1
+                or completed_paragraphs >= total_paragraphs
+                or unsaved_stream_segments >= STREAM_PROGRESS_SAVE_PARAGRAPH_INTERVAL
+                or now - last_stream_save_at >= STREAM_PROGRESS_SAVE_SECONDS
+            )
+            if should_persist:
+                unsaved_stream_segments = 0
+                last_stream_save_at = now
+            return should_persist
+
         def publish_stream_segment(segment: StreamSegment) -> None:
             nonlocal completed_paragraphs
             completed_paragraphs += 1
             job.stream_segments.append(segment)
             job.progress = generation_progress(completed_paragraphs, total_paragraphs)
             job.message = f"Rendering speech ({completed_paragraphs}/{max(1, total_paragraphs)} paragraphs)"
-            self._remember(job)
+            self._remember(job, persist=should_persist_stream_update())
 
         for index, chapter in enumerate(book.chapters):
             if chapter.id not in selected_ids:
@@ -185,11 +204,12 @@ class JobRunner:
 
         return load_job(job_id)
 
-    def _remember(self, job: GenerateJob) -> None:
+    def _remember(self, job: GenerateJob, persist: bool = True) -> None:
         with self._lock:
             job.updated_at = time.time()
             self._jobs[job.id] = job.model_copy(deep=True)
-            save_job(job)
+            if persist:
+                save_job(job)
 
     def _set_chapter_status(
         self,

@@ -2539,10 +2539,13 @@ function StreamingAudioQueue({
   );
   const [activeSequence, setActiveSequence] = useState<number | null>(null);
   const [continuePlayback, setContinuePlayback] = useState(false);
+  const [waitingToContinue, setWaitingToContinue] = useState(false);
 
   useEffect(() => {
     if (sortedSegments.length === 0) {
       setActiveSequence(null);
+      setContinuePlayback(false);
+      setWaitingToContinue(false);
       return;
     }
     if (
@@ -2550,6 +2553,7 @@ function StreamingAudioQueue({
       !sortedSegments.some((segment) => segment.sequence === activeSequence)
     ) {
       setActiveSequence(sortedSegments[0].sequence);
+      setWaitingToContinue(false);
     }
   }, [activeSequence, sortedSegments]);
 
@@ -2562,18 +2566,36 @@ function StreamingAudioQueue({
       : (sortedSegments[0] ?? null);
   const nextSegment =
     activeIndex >= 0 ? (sortedSegments[activeIndex + 1] ?? null) : null;
+  const nextSegmentSequence = nextSegment?.sequence ?? null;
+  const generationActive = status === "queued" || status === "running";
   const waitingForMore =
-    Boolean(activeSegment) &&
-    !nextSegment &&
-    (status === "queued" || status === "running");
+    Boolean(activeSegment) && !nextSegment && generationActive;
 
-  function handleSegmentEnded() {
-    if (!nextSegment) {
-      setContinuePlayback(false);
+  useEffect(() => {
+    if (!waitingToContinue) {
       return;
     }
+    if (nextSegmentSequence !== null) {
+      setWaitingToContinue(false);
+      setContinuePlayback(true);
+      setActiveSequence(nextSegmentSequence);
+      return;
+    }
+    if (!generationActive) {
+      setWaitingToContinue(false);
+      setContinuePlayback(false);
+    }
+  }, [generationActive, nextSegmentSequence, waitingToContinue]);
+
+  function handleSegmentEnded() {
+    if (nextSegmentSequence === null) {
+      setWaitingToContinue(generationActive);
+      setContinuePlayback(generationActive);
+      return;
+    }
+    setWaitingToContinue(false);
     setContinuePlayback(true);
-    setActiveSequence(nextSegment.sequence);
+    setActiveSequence(nextSegmentSequence);
   }
 
   return (

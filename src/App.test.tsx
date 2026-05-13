@@ -16,6 +16,10 @@ declare global {
 }
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+Object.defineProperty(window, "localStorage", {
+  configurable: true,
+  value: createMemoryStorage(),
+});
 
 const apiMock = vi.hoisted(() => ({
   createCustomStyle: vi.fn(),
@@ -33,6 +37,30 @@ const apiMock = vi.hoisted(() => ({
 }));
 
 vi.mock("./lib/api", () => apiMock);
+
+function createMemoryStorage(): Storage {
+  const items = new Map<string, string>();
+  return {
+    get length() {
+      return items.size;
+    },
+    clear() {
+      items.clear();
+    },
+    getItem(key: string) {
+      return items.get(String(key)) ?? null;
+    },
+    key(index: number) {
+      return Array.from(items.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      items.delete(String(key));
+    },
+    setItem(key: string, value: string) {
+      items.set(String(key), String(value));
+    },
+  };
+}
 
 describe("App review fixes", () => {
   let mountedRoots: Root[] = [];
@@ -538,6 +566,74 @@ describe("App review fixes", () => {
       );
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("continues playback when the next stream segment arrives after waiting", async () => {
+    const firstJob = sampleJob({
+      stream_segments: [
+        sampleStreamSegment({
+          sequence: 0,
+          audio_url: "/media/generated/job/ch-1/segments/0000.wav",
+          text_preview: "First paragraph.",
+        }),
+      ],
+    });
+    const secondJob = sampleJob({
+      stream_segments: [
+        ...firstJob.stream_segments,
+        sampleStreamSegment({
+          sequence: 1,
+          paragraph_id: "p-2",
+          paragraph_index: 1,
+          audio_url: "/media/generated/job/ch-1/segments/0001.wav",
+          text_preview: "Second paragraph.",
+        }),
+      ],
+    });
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
+    apiMock.startGeneration.mockResolvedValue(firstJob);
+    apiMock.getJob.mockResolvedValue(secondJob);
+    vi.useFakeTimers();
+
+    try {
+      const { container } = await renderApp();
+
+      await act(async () => {
+        buttonByText(container, "Create audiobook").click();
+      });
+
+      const firstAudio = container.querySelector<HTMLAudioElement>(
+        '[aria-label="Streaming audiobook player"] audio',
+      );
+      expect(firstAudio?.getAttribute("src")).toBe(
+        "/media/generated/job/ch-1/segments/0000.wav",
+      );
+
+      await act(async () => {
+        firstAudio?.dispatchEvent(new Event("ended", { bubbles: true }));
+      });
+
+      expect(container.textContent).toContain(
+        "Waiting for the next paragraph...",
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1800);
+      });
+
+      const nextAudio = container.querySelector<HTMLAudioElement>(
+        '[aria-label="Streaming audiobook player"] audio',
+      );
+      expect(nextAudio?.getAttribute("src")).toBe(
+        "/media/generated/job/ch-1/segments/0001.wav",
+      );
+      expect(play).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      play.mockRestore();
     }
   });
 
