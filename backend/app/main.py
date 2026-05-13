@@ -221,8 +221,10 @@ def update_book(book_id: str, patch: BookPatch) -> Book:
     book = load_or_404(book_id)
     if patch.title is not None:
         book.title = patch.title.strip() or book.title
-    cast_changed = book.cast != patch.cast
-    book.cast = patch.cast
+    cast_changed = False
+    if patch.cast is not None:
+        cast_changed = book.cast != patch.cast
+        book.cast = patch.cast
 
     chapters_by_id = {chapter.id: chapter for chapter in book.chapters}
     cast_ids = {member.id for member in book.cast}

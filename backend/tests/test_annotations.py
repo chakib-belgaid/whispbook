@@ -32,6 +32,14 @@ def test_validate_voice_ranges_rejects_overlaps_and_unknown_cast():
     assert "Unknown cast member" in "; ".join(errors)
 
 
+def test_validate_voice_ranges_reports_start_outside_paragraph():
+    ranges = [VoiceRange(id="r1", start=20, end=25, cast_id="alice")]
+
+    errors = validate_voice_ranges("short text", ranges, {"alice"})
+
+    assert "starts outside" in "; ".join(errors)
+
+
 def test_build_annotated_tts_segments_resolves_cast_styles():
     text = "Narrator opens. Alice answers. Narrator closes."
     start = text.index("Alice")
@@ -56,6 +64,36 @@ def test_build_annotated_tts_segments_resolves_cast_styles():
         ("Narrator opens. ", "narrator"),
         ("Alice answers.", "alice-style"),
         (" Narrator closes.", "narrator"),
+    ]
+
+
+def test_build_annotated_tts_segments_skips_whitespace_only_gaps():
+    text = "Alice Bob"
+    paragraph = Paragraph(
+        id="p1",
+        index=0,
+        original_text=text,
+        text=text,
+        voice_ranges=[
+            VoiceRange(id="r1", start=0, end=5, cast_id="alice"),
+            VoiceRange(id="r2", start=6, end=9, cast_id="bob"),
+        ],
+    )
+    cast = [
+        CastMember(id="alice", name="Alice", style_id="alice-style", color="#77aadd"),
+        CastMember(id="bob", name="Bob", style_id="bob-style", color="#ddaa77"),
+    ]
+
+    segments = build_annotated_tts_segments(
+        paragraph,
+        default_style=turbo_style("narrator"),
+        cast=cast,
+        load_style=lambda style_id: turbo_style(style_id),
+    )
+
+    assert [(segment.text, segment.style.id) for segment in segments] == [
+        ("Alice", "alice-style"),
+        ("Bob", "bob-style"),
     ]
 
 

@@ -622,6 +622,42 @@ describe("App review fixes", () => {
     expect(container.textContent).toContain("Default narrator remains plain");
   });
 
+  it("saves highlighted voice ranges as code-point offsets", async () => {
+    const book = sampleBook("emoji", "Emoji", "emoji.md");
+    book.chapters[0].paragraphs[0].original_text = "😀 Alice paragraph";
+    book.chapters[0].paragraphs[0].text = "😀 Alice paragraph";
+    apiMock.getBooks.mockResolvedValue([book]);
+    const { container } = await renderApp();
+    await act(async () => {
+      selectNarrationEngine(container, "chatterbox_turbo");
+    });
+
+    const editor = activeParagraphEditor(container);
+    const start = editor.value.indexOf("Alice");
+    await act(async () => {
+      selectTextInTextarea(editor, start, start + "Alice".length);
+    });
+    const voiceList = container.querySelector<HTMLElement>(
+      '[aria-label="Available character voices"]',
+    );
+
+    await act(async () => {
+      voiceList
+        ?.querySelector<HTMLButtonElement>('[data-cast-id="emoji-alice"]')
+        ?.click();
+    });
+    await act(async () => {
+      buttonByText(container, "Save Edits").click();
+    });
+
+    const saved = apiMock.saveBook.mock.calls.at(-1)?.[0] as Book;
+    expect(saved.chapters[0].paragraphs[0].voice_ranges[0]).toMatchObject({
+      start: 2,
+      end: 7,
+      cast_id: "emoji-alice",
+    });
+  });
+
   it("shows saved storage voices when assigning selected text", async () => {
     const book = sampleBook("storage-voices", "Storage Voices", "voices.md");
     book.cast = [];

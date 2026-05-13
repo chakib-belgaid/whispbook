@@ -1030,7 +1030,7 @@ function App() {
       const insertion = insertionRangeForParagraph(
         selectedAnnotationRange,
         paragraphId,
-        current.text.length,
+        codePointLength(current.text),
       );
       return insertTextAtRange(
         current,
@@ -2130,10 +2130,11 @@ function voiceHighlightSegments(
   cast: CastMember[],
 ): VoiceHighlightSegment[] {
   const castById = new Map(cast.map((member) => [member.id, member]));
+  const textLength = codePointLength(paragraph.text);
   const ranges = paragraph.voice_ranges
     .map((range) => {
-      const start = Math.max(0, Math.min(range.start, paragraph.text.length));
-      const end = Math.max(0, Math.min(range.end, paragraph.text.length));
+      const start = Math.max(0, Math.min(range.start, textLength));
+      const end = Math.max(0, Math.min(range.end, textLength));
       return {
         id: range.id,
         start: Math.min(start, end),
@@ -2150,7 +2151,7 @@ function voiceHighlightSegments(
     if (range.start > cursor) {
       segments.push({
         key: `plain-${cursor}-${range.start}`,
-        text: paragraph.text.slice(cursor, range.start),
+        text: codePointSlice(paragraph.text, cursor, range.start),
         castName: null,
         color: null,
       });
@@ -2159,17 +2160,17 @@ function voiceHighlightSegments(
     if (range.end > highlightStart) {
       segments.push({
         key: `voice-${range.id}-${highlightStart}-${range.end}`,
-        text: paragraph.text.slice(highlightStart, range.end),
+        text: codePointSlice(paragraph.text, highlightStart, range.end),
         castName: range.member?.name ?? "Unknown voice",
         color: range.member?.color ?? "#8a8a8a",
       });
       cursor = range.end;
     }
   }
-  if (cursor < paragraph.text.length) {
+  if (cursor < textLength) {
     segments.push({
-      key: `plain-${cursor}-${paragraph.text.length}`,
-      text: paragraph.text.slice(cursor),
+      key: `plain-${cursor}-${textLength}`,
+      text: codePointSlice(paragraph.text, cursor),
       castName: null,
       color: null,
     });
@@ -3223,8 +3224,9 @@ function tagInsertionText(
   end: number,
   tag: string,
 ): string {
-  const previousCharacter = start > 0 ? text[start - 1] : "";
-  const nextCharacter = end < text.length ? text[end] : "";
+  const previousCharacter = start > 0 ? codePointCharAt(text, start - 1) : "";
+  const nextCharacter =
+    end < codePointLength(text) ? codePointCharAt(text, end) : "";
   const leadingSpace =
     previousCharacter && !/\s/.test(previousCharacter) ? " " : "";
   const trailingSpace = nextCharacter && !/\s/.test(nextCharacter) ? " " : "";
@@ -3238,8 +3240,8 @@ function selectionRangeWithinTextarea(
   if (typeof selectionStart !== "number" || typeof selectionEnd !== "number") {
     return null;
   }
-  const start = Math.max(0, Math.min(selectionStart, value.length));
-  const end = Math.max(0, Math.min(selectionEnd, value.length));
+  const start = codeUnitOffsetToCodePointOffset(value, selectionStart);
+  const end = codeUnitOffsetToCodePointOffset(value, selectionEnd);
   return start <= end ? { start, end } : { start: end, end: start };
 }
 
@@ -3282,7 +3284,9 @@ function insertTextAtRange(
   insertion: string,
 ): Paragraph {
   const nextText =
-    paragraph.text.slice(0, start) + insertion + paragraph.text.slice(end);
+    codePointSlice(paragraph.text, 0, start) +
+    insertion +
+    codePointSlice(paragraph.text, end);
   return {
     ...paragraph,
     text: nextText,
@@ -3302,28 +3306,30 @@ function reconcileVoiceRangesAfterTextEdit(
   if (previousText === nextText || ranges.length === 0) {
     return ranges;
   }
+  const previousCharacters = Array.from(previousText);
+  const nextCharacters = Array.from(nextText);
   let prefix = 0;
   while (
-    prefix < previousText.length &&
-    prefix < nextText.length &&
-    previousText[prefix] === nextText[prefix]
+    prefix < previousCharacters.length &&
+    prefix < nextCharacters.length &&
+    previousCharacters[prefix] === nextCharacters[prefix]
   ) {
     prefix += 1;
   }
 
   let suffix = 0;
   while (
-    suffix < previousText.length - prefix &&
-    suffix < nextText.length - prefix &&
-    previousText[previousText.length - 1 - suffix] ===
-      nextText[nextText.length - 1 - suffix]
+    suffix < previousCharacters.length - prefix &&
+    suffix < nextCharacters.length - prefix &&
+    previousCharacters[previousCharacters.length - 1 - suffix] ===
+      nextCharacters[nextCharacters.length - 1 - suffix]
   ) {
     suffix += 1;
   }
 
-  const previousEditEnd = previousText.length - suffix;
-  const nextEditEnd = nextText.length - suffix;
-  const delta = nextText.length - previousText.length;
+  const previousEditEnd = previousCharacters.length - suffix;
+  const nextEditEnd = nextCharacters.length - suffix;
+  const delta = nextCharacters.length - previousCharacters.length;
 
   function mapOffset(offset: number): number {
     if (offset <= prefix) {
@@ -3338,10 +3344,45 @@ function reconcileVoiceRangesAfterTextEdit(
   return ranges
     .map((range) => ({
       ...range,
-      start: Math.max(0, Math.min(nextText.length, mapOffset(range.start))),
-      end: Math.max(0, Math.min(nextText.length, mapOffset(range.end))),
+      start: Math.max(
+        0,
+        Math.min(nextCharacters.length, mapOffset(range.start)),
+      ),
+      end: Math.max(0, Math.min(nextCharacters.length, mapOffset(range.end))),
     }))
     .filter((range) => range.start < range.end);
+}
+
+function codePointLength(text: string): number {
+  return Array.from(text).length;
+}
+
+function codePointSlice(text: string, start: number, end?: number): string {
+  return Array.from(text).slice(start, end).join("");
+}
+
+function codePointCharAt(text: string, offset: number): string {
+  return Array.from(text)[offset] ?? "";
+}
+
+function codeUnitOffsetToCodePointOffset(
+  text: string,
+  codeUnitOffset: number,
+): number {
+  const normalizedOffset = Math.max(0, Math.min(codeUnitOffset, text.length));
+  let codePointOffset = 0;
+  let codeUnitCursor = 0;
+
+  for (const character of text) {
+    const nextCodeUnitCursor = codeUnitCursor + character.length;
+    if (nextCodeUnitCursor > normalizedOffset) {
+      return codePointOffset;
+    }
+    codePointOffset += 1;
+    codeUnitCursor = nextCodeUnitCursor;
+  }
+
+  return codePointOffset;
 }
 
 function messageFromError(error: unknown): string {

@@ -80,6 +80,7 @@ def test_import_librivox_project_creates_turbo_style(monkeypatch, tmp_path):
     assert style["id"] == style_id
     assert style["name"] == "North and South (Chatterbox Turbo)"
     assert style["engine"] == "chatterbox_turbo"
+    assert style["voice"] == "reference"
     assert style["language"] == "en"
     assert style["custom"] is True
     assert style["reference_audio_path"] == str(reference_path)

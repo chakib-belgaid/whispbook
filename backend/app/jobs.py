@@ -301,7 +301,7 @@ def build_annotated_tts_segments(
     if cursor < len(text):
         segments.append(AnnotatedTTSSegment(text=text[cursor:], style=default_style))
 
-    return [segment for segment in segments if segment.text] or [AnnotatedTTSSegment(text=".", style=default_style)]
+    return [segment for segment in segments if segment.text.strip()] or [AnnotatedTTSSegment(text=".", style=default_style)]
 
 
 def validate_voice_ranges(text: str, ranges: Sequence[VoiceRange], cast_ids: set[str]) -> List[str]:
@@ -312,6 +312,8 @@ def validate_voice_ranges(text: str, ranges: Sequence[VoiceRange], cast_ids: set
             errors.append(f"Unknown cast member for range {voice_range.id}.")
         if voice_range.start >= voice_range.end:
             errors.append(f"Voice range {voice_range.id} must have start before end.")
+        if voice_range.start > len(text):
+            errors.append(f"Voice range {voice_range.id} starts outside the paragraph.")
         if voice_range.end > len(text):
             errors.append(f"Voice range {voice_range.id} ends outside the paragraph.")
         if previous_end > voice_range.start:

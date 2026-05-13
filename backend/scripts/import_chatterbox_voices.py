@@ -84,7 +84,7 @@ def import_voice(options: ImportOptions) -> list[VoiceStyle]:
             name=f"{title} ({engine_label(engine)})",
             engine=engine,
             description=description_for(resolved),
-            voice="af_heart",
+            voice="reference",
             language=options.language,
             speed=1.0,
             exaggeration=0.5,

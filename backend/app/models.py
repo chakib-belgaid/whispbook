@@ -77,7 +77,7 @@ class ChapterPatch(BaseModel):
 
 class BookPatch(BaseModel):
     title: Optional[str] = None
-    cast: List[CastMember] = Field(default_factory=list)
+    cast: Optional[List[CastMember]] = None
     chapters: List[ChapterPatch] = Field(default_factory=list)
 
 
